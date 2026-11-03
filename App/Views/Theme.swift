@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WordBubblesCore
 
 /// A color written as in the website's CSS.
 struct RGBA: Sendable {
@@ -124,16 +125,21 @@ enum Theme {
     // MARK: Type
 
     static let displayWeight = Font.Weight.bold
-    static let bodyWeight = Font.Weight.heavy
+    static let bodyWeight = Font.Weight.semibold
 
-    /// Stands in for Fredoka 600.
+    /// Stands in for the website's Fredoka 600.
     static func display(_ size: CGFloat) -> Font {
         .system(size: size, weight: displayWeight, design: .rounded)
     }
 
-    /// Stands in for Nunito 800.
+    /// Fixed sizes for the play screen, where the board's geometry decides what fits.
     static func body(_ size: CGFloat, weight: Font.Weight = bodyWeight) -> Font {
         .system(size: size, weight: weight, design: .rounded)
+    }
+
+    /// Sizes that follow Dynamic Type, for sheets and the score screen.
+    static func text(_ style: Font.TextStyle, weight: Font.Weight = bodyWeight) -> Font {
+        .system(style, design: .rounded, weight: weight)
     }
 
     /// The width of a tray tile's text, so tiles can be placed before they are drawn.
@@ -179,6 +185,28 @@ enum Theme {
             ],
             center: UnitPoint(x: 0.32, y: 0.28), startRadius: 0, endRadius: hypot(0.68, 0.72) * diameter
         )
+    }
+}
+
+extension Level {
+    var tint: Color {
+        switch self {
+        case .easy: return Theme.good
+        case .medium: return Theme.hint
+        case .hard: return Theme.bad
+        case .tutorial: return Theme.muted
+        }
+    }
+}
+
+extension FlashTone {
+    var color: Color {
+        switch self {
+        case .good: return Theme.good
+        case .hint: return Theme.hint
+        case .bad: return Theme.bad
+        case .secret: return Theme.secretInk
+        }
     }
 }
 

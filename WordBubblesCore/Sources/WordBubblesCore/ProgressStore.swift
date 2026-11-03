@@ -7,6 +7,12 @@ public struct DayRow: Equatable, Sendable {
     public let done: [Level]
     /// "Play" while any board is open, else "Open".
     public let buttonLabel: String
+
+    public init(day: Int, done: [Level], buttonLabel: String) {
+        self.day = day
+        self.done = done
+        self.buttonLabel = buttonLabel
+    }
 }
 
 /// All saved games: one record per day and level, plus stats and the tutorial flag.

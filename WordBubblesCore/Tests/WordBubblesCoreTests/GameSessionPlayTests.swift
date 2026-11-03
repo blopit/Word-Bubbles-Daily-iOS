@@ -347,7 +347,7 @@ final class GameSessionBonusTests: XCTestCase {
         var s = realSession()
         let events = s.tap("AC", "T")
         XCTAssertEqual(events.last, .bonusCollected(word: "ACT", isSecret: false, points: 15, ids: ["1-1", "0-2"]))
-        XCTAssertEqual(events.last?.flash, Flash(text: "ACT ✦ bonus +15", tone: .hint))
+        XCTAssertEqual(events.last?.flash, Flash(text: "✦ Bonus +15", tone: .hint))
         XCTAssertEqual(s.chain, [])
         XCTAssertEqual(s.progress.bonus, ["ACT"])
         XCTAssertEqual(s.progress.points, 15)
@@ -377,7 +377,7 @@ final class GameSessionBonusTests: XCTestCase {
         s.tap("AC", "T")
         let events = s.tap("AC", "T")
         XCTAssertEqual(events.last, .bonusAlreadyFound(word: "ACT"))
-        XCTAssertEqual(events.last?.flash, Flash(text: "ACT · bonus already found", tone: .hint))
+        XCTAssertEqual(events.last?.flash, Flash(text: "Bonus already found", tone: .hint))
         XCTAssertEqual(s.chain, ["1-1", "0-2"])
         XCTAssertEqual(s.progress.points, 15)
         XCTAssertEqual(s.progress.bonus, ["ACT"])
@@ -417,7 +417,7 @@ final class GameSessionBonusTests: XCTestCase {
         XCTAssertNotNil(s.puzzle.bubbles.first { $0.text == "IR" }, "board changed")
         let events = s.tap("IR", "ON")
         XCTAssertEqual(events.last, .bonusCollected(word: "IRON", isSecret: true, points: 100, ids: [s.id(of: "IR"), s.id(of: "ON")]))
-        XCTAssertEqual(events.last?.flash, Flash(text: "IRON ◆ secret +100", tone: .secret))
+        XCTAssertEqual(events.last?.flash, Flash(text: "◆ Secret +100", tone: .secret))
         XCTAssertEqual(s.progress.points, 100)
     }
 

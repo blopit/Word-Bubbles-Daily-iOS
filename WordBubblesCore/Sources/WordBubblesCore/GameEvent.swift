@@ -22,6 +22,8 @@ public enum GameEvent: Equatable, Sendable {
     case unpicked(ids: [String])
     case wordLocked(wordIndex: Int, word: String, ids: [String], gained: Int, combo: Int, isTutorial: Bool, completesBoard: Bool)
     case bonusCollected(word: String, isSecret: Bool, points: Int, ids: [String])
+    /// A bonus banked on the way to a hidden word. The tiles stay, so the player can keep spelling.
+    case bonusInline(word: String, isSecret: Bool, points: Int)
     case bonusAlreadyFound(word: String)
     /// The picked bubbles are a word's pieces in the wrong order.
     case nearMiss(isTutorial: Bool)
@@ -40,7 +42,8 @@ public enum GameEvent: Equatable, Sendable {
         firstHint ? " · no medal" : ""
     }
 
-    /// The message this event shows, exactly as the web game builds it.
+    /// The message this event shows, as the web game builds it. Bonus flashes leave out the word: on iOS found bonus
+    /// words stay private until the score screen.
     public var flash: Flash? {
         switch self {
         case .picked, .unpicked, .comboBroken, .shuffled, .finished:
@@ -50,12 +53,12 @@ public enum GameEvent: Equatable, Sendable {
             if isTutorial { return Flash(text: word + " ✓", tone: .good) }
             let suffix = combo >= 2 ? " · combo ×\(Scoring.multiplier(combo))!" : ""
             return Flash(text: "\(word) +\(gained)\(suffix)", tone: .good)
-        case let .bonusCollected(word, isSecret, points, _):
+        case let .bonusCollected(_, isSecret, points, _), let .bonusInline(_, isSecret, points):
             return isSecret
-                ? Flash(text: "\(word) ◆ secret +\(points)", tone: .secret)
-                : Flash(text: "\(word) ✦ bonus +\(points)", tone: .hint)
-        case let .bonusAlreadyFound(word):
-            return Flash(text: word + " · bonus already found", tone: .hint)
+                ? Flash(text: "◆ Secret +\(points)", tone: .secret)
+                : Flash(text: "✦ Bonus +\(points)", tone: .hint)
+        case .bonusAlreadyFound:
+            return Flash(text: "Bonus already found", tone: .hint)
         case let .nearMiss(isTutorial):
             let text = isTutorial
                 ? "Right bubbles. Now tap them in order: RA → IN → BOW"

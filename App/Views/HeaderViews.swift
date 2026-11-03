@@ -1,185 +1,190 @@
 import SwiftUI
 import WordBubblesCore
 
-/// A round panel button, 40pt with a 44pt target.
-struct IconButton<Label: View>: View {
-    var size: CGFloat = 40
-    let accessibility: String
-    let identifier: String
-    let action: () -> Void
-    @ViewBuilder let label: () -> Label
-
-    var body: some View {
-        Button(action: action) {
-            label()
-                .frame(width: size, height: size)
-                .background(Theme.panel, in: Circle())
-                .overlay { Circle().strokeBorder(Theme.glassBorder, lineWidth: 1) }
-                .cssShadow(Circle(), color: Theme.glassShadow, blur: 32, y: 12)
-                .frame(width: max(size, 44), height: max(size, 44))
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressScale())
-        .accessibilityLabel(accessibility)
-        .accessibilityIdentifier(identifier)
-    }
-}
-
-/// `.top`.
+/// The one row of chrome: the day on the left, the score in the middle, everything else behind "⋯".
 struct TopBar: View {
     @Environment(GameModel.self) private var model
-    @Environment(\.compact) private var compact
 
     var body: some View {
-        HStack(spacing: 0) {
-            HStack(spacing: 8) {
-                GlossyCircle(diameter: 22)
-                    .accessibilityHidden(true)
-                Text("Word Bubbles")
-                    .font(Theme.display(20))
-                    .kerning(-0.2)
-                    .lineLimit(1)
-                    .accessibilityAddTraits(.isHeader)
+        ZStack {
+            HStack(spacing: 0) {
+                if model.isTutorial { Brand() } else { DayButton() }
+                Spacer(minLength: 8)
+                if !model.isTutorial {
+                    MoreMenu()
+                } else if model.result == nil {
+                    SkipButton()
+                }
             }
-            Spacer(minLength: 8)
-            HStack(spacing: 4) {
-                IconButton(
-                    accessibility: model.soundOn ? "Sound on" : "Sound off", identifier: "sound-button",
-                    action: model.toggleSound
-                ) {
-                    Image(systemName: model.soundOn ? "speaker.wave.2" : "speaker.slash")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                IconButton(accessibility: "Days and statistics", identifier: "days-button", action: model.openDays) {
-                    Image(systemName: "calendar").font(.system(size: 16, weight: .semibold))
-                }
-                IconButton(accessibility: "How to play", identifier: "help-button", action: model.openHelp) {
-                    Text("?").font(Theme.body(16))
-                }
+            if !model.isTutorial, model.result == nil {
+                ScoreHUD()
             }
         }
-        .padding(.horizontal, 2)
-        .frame(minHeight: compact ? 40 : nil)
+        .frame(height: 44)
     }
 }
 
-/// `.tabs`: a pill with a sliding thumb.
-struct LevelTabs: View {
-    @Environment(GameModel.self) private var model
-    @Environment(\.compact) private var compact
-
-    private func dot(_ level: Level) -> Color {
-        switch level {
-        case .easy: return Theme.good
-        case .medium: return Theme.hint
-        case .hard: return Theme.bad
-        case .tutorial: return Theme.muted
+struct Brand: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            GlossyCircle(diameter: 22)
+                .accessibilityHidden(true)
+            Text("Word Bubbles")
+                .font(Theme.display(20))
+                .kerning(-0.2)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
         }
     }
+}
+
+struct SkipButton: View {
+    @Environment(GameModel.self) private var model
 
     var body: some View {
-        let index = Level.playable.firstIndex(of: model.level) ?? 0
+        Button("Skip", action: model.skipTutorial)
+            .font(Theme.body(15))
+            .padding(.horizontal, 18)
+            .frame(height: 44)
+            .floatingGlass(in: Capsule(), interactive: true)
+            .buttonStyle(PressScale())
+            .accessibilityLabel("Skip tutorial")
+            .accessibilityIdentifier("skip-tutorial")
+    }
+}
+
+/// Opens the calendar. Shrinks to its icon while a word is being spelled.
+struct DayButton: View {
+    @Environment(GameModel.self) private var model
+
+    var body: some View {
+        let spelling = model.trayActive
+        Button(action: model.openDays) {
+            HStack(spacing: 6) {
+                Image(systemName: "calendar").font(.system(size: 16, weight: .semibold))
+                if !spelling {
+                    Text(model.dayTitle)
+                        .font(Theme.body(15))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .fixedSize()
+                        .transition(.opacity)
+                }
+            }
+            .padding(.horizontal, spelling ? 0 : 14)
+            .frame(minWidth: 44, minHeight: 44)
+            .floatingGlass(in: Capsule(), interactive: true)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressScale())
+        .animation(Theme.glide(0.3), value: spelling)
+        .accessibilityLabel("\(model.dayName), \(model.dayLabel). Your days")
+        .accessibilityIdentifier("days-button")
+    }
+}
+
+/// Settings live here, in a native menu that stays open while they change.
+struct MoreMenu: View {
+    @Environment(GameModel.self) private var model
+
+    var body: some View {
+        Menu {
+            Toggle("Sound", systemImage: "speaker.wave.2", isOn: Binding(
+                get: { model.soundOn }, set: { _ in model.toggleSound() }
+            ))
+            .menuActionDismissBehavior(.disabled)
+            Toggle("Haptics", systemImage: "iphone.radiowaves.left.and.right", isOn: Binding(
+                get: { model.hapticsOn }, set: model.setHaptics
+            ))
+            .menuActionDismissBehavior(.disabled)
+            Toggle("Post Times to Leaderboards", systemImage: "trophy", isOn: Binding(
+                get: { model.postsTimes }, set: model.setPostsTimes
+            ))
+            .menuActionDismissBehavior(.disabled)
+            Divider()
+            Button("How to Play", systemImage: "questionmark.circle", action: model.openHelp)
+                .accessibilityIdentifier("help-button")
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 16, weight: .bold))
+                .frame(width: 44, height: 44)
+                .floatingGlass(in: Circle(), interactive: true)
+                .contentShape(Circle())
+        }
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("more-menu")
+    }
+}
+
+/// The levels, as a floating bar like a system tab bar. While a word is being spelled it draws in to the current
+/// level, so the board has the screen and a stray thumb can't change level.
+struct LevelBar: View {
+    @Environment(GameModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    static let height: CGFloat = 52
+    private static let inset: CGFloat = 4
+
+    var body: some View {
+        let index = CGFloat(Level.playable.firstIndex(of: model.level) ?? 0)
+        let spelling = model.trayActive
         GeometryReader { proxy in
-            let width = (proxy.size.width - 6) / 3
+            let full = proxy.size.width
+            let segment = (full - Self.inset * 2) / 3
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Theme.glassStrong)
                     .shadow(color: RGBA(20, 30, 60, 0.12).color, radius: 5, y: 2)
-                    .frame(width: width)
-                    .padding(.vertical, 3)
-                    .offset(x: 3 + CGFloat(index) * width)
+                    .frame(width: segment, height: Self.height - Self.inset * 2)
+                    .offset(x: Self.inset + index * segment)
                     .animation(Theme.settle(0.32), value: index)
                 HStack(spacing: 0) {
                     ForEach(model.tabs) { tab in
-                        tabButton(tab).frame(width: width)
+                        tabButton(tab, spelling: spelling).frame(width: segment)
                     }
                 }
-                .padding(.horizontal, 3)
+                .padding(.horizontal, Self.inset)
             }
+            .frame(width: full, height: Self.height, alignment: .leading)
+            .offset(x: spelling ? -index * segment : 0)
+            .frame(width: spelling ? segment + Self.inset * 2 : full, height: Self.height, alignment: .leading)
+            .clipShape(Capsule())
+            .floatingGlass(in: Capsule())
+            .frame(width: full)
         }
-        .frame(height: compact ? 40 : 44)
-        .background(Theme.panel, in: Capsule())
-        .overlay { Capsule().strokeBorder(Theme.glassBorder, lineWidth: 1) }
-        .cssShadow(Capsule(), color: Theme.glassShadow, blur: 32, y: 12)
+        .frame(height: Self.height)
+        .padding(.horizontal, 4)
+        .animation(reduceMotion ? nil : Theme.glide(0.35), value: spelling)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Difficulty")
     }
 
-    private func tabButton(_ tab: TabDisplay) -> some View {
+    private func tabButton(_ tab: TabDisplay, spelling: Bool) -> some View {
         let active = tab.level == model.level
         return Button {
             model.select(level: tab.level)
         } label: {
             HStack(spacing: 6) {
-                Circle().fill(dot(tab.level)).frame(width: 7, height: 7)
+                Circle().fill(tab.level.tint).frame(width: 7, height: 7)
                 Text(tab.level.label)
                 if !tab.badge.isEmpty {
                     Text(tab.badge).font(Theme.body(11)).monospacedDigit().foregroundStyle(Theme.good)
                 }
             }
             .font(Theme.body(14))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .foregroundStyle(active ? Theme.fg : Theme.muted)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle().inset(by: compact ? -2 : 0))
+            .contentShape(Rectangle())
             .animation(.easeOut(duration: 0.2), value: active)
         }
         .buttonStyle(PressScale())
+        .opacity(spelling && !active ? 0 : 1)
+        .allowsHitTesting(!spelling)
+        .accessibilityHidden(spelling && !active)
         .accessibilityLabel(tab.level.label + (tab.badge == "✓" ? ", done" : tab.badge.isEmpty ? "" : ", \(tab.badge)"))
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("tab-\(tab.level.rawValue)")
-    }
-}
-
-/// `.daynav`.
-struct DayNav: View {
-    @Environment(GameModel.self) private var model
-    @Environment(\.compact) private var compact
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            HStack(spacing: 6) {
-                navButton("‹", label: "Previous day", id: "prev-day", enabled: model.canGoBack, action: model.previousDay)
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(model.dayName).font(Theme.body(15))
-                    Text(model.dayLabel).font(Theme.body(13)).foregroundStyle(Theme.muted)
-                }
-                .monospacedDigit()
-                .lineLimit(1)
-                .frame(minWidth: 170)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("day-label")
-                navButton("›", label: "Next day", id: "next-day", enabled: model.canGoForward, action: model.nextDay)
-            }
-            .frame(maxWidth: .infinity)
-            if model.showsToday {
-                Button("Today", action: model.goToToday)
-                    .font(Theme.body(14))
-                    .foregroundStyle(Theme.accent)
-                    .padding(.horizontal, 8)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier("today-button")
-            }
-        }
-    }
-
-    private func navButton(_ glyph: String, label: String, id: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        let size: CGFloat = compact ? 40 : 44
-        return Button(action: action) {
-            Text(glyph)
-                .font(.system(size: 22, weight: .bold))
-                .padding(.bottom, 2)
-                .frame(width: size, height: size)
-                .background(Theme.panel, in: Circle())
-                .overlay { Circle().strokeBorder(Theme.glassBorder, lineWidth: 1) }
-                .frame(width: 44, height: size)
-                .contentShape(Rectangle().inset(by: size - 44 < 0 ? -2 : 0))
-        }
-        .buttonStyle(PressScale(amount: 0.92))
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.3)
-        .accessibilityLabel(label)
-        .accessibilityIdentifier(id)
     }
 }
 

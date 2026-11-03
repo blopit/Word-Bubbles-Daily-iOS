@@ -238,12 +238,31 @@ public struct GameSession {
         return starEvents() + [.bonusCollected(word: word, isSecret: secret, points: points, ids: ids)]
     }
 
+    /// Banks a bonus word without touching the tray. Unlike the website, which empties the tray here and makes the
+    /// player spell their hidden word again.
+    private mutating func collectBonusInline(_ word: String) -> [GameEvent] {
+        progress.bonus.append(word)
+        let secret = isSecret(word)
+        let points = word.count * (secret ? 25 : 5)
+        progress.points += points
+        save()
+        return starEvents() + [.bonusInline(word: word, isSecret: secret, points: points)]
+    }
+
+    /// True when the tiles so far are the start of a hidden word still to find.
+    private var startsHiddenWord: Bool {
+        let text = spelled
+        return puzzle.words.indices.contains { index in
+            !progress.found.contains(index) && puzzle.words[index].hasPrefix(text) && puzzle.words[index] != text
+        }
+    }
+
     /// The same check after a bubble is added or put back: hidden word, then new bonus, then found bonus, then cues.
     private mutating func checkChain() -> (completed: Bool, events: [GameEvent]) {
         if let index = matchWord { return (true, lockWord(index)) }
         if let word = bonusMatch {
-            if !progress.bonus.contains(word) { return (true, collectBonus(word)) }
-            return (true, [.bonusAlreadyFound(word: word)])
+            if progress.bonus.contains(word) { return (true, [.bonusAlreadyFound(word: word)]) }
+            return (true, startsHiddenWord ? collectBonusInline(word) : collectBonus(word))
         }
         return (false, lengthCue())
     }

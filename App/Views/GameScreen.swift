@@ -1,44 +1,50 @@
 import SwiftUI
 import WordBubblesCore
 
-/// The one screen: a fixed column, at most 520 wide, with the flight layer and overlay cards above it.
+/// The one screen. The game is the surface: a column at most 520 wide, with the flight layer above it, and the few
+/// controls floating on top get out of the way while a word is being spelled.
 struct GameScreen: View {
     static let space = "game"
     @Environment(GameModel.self) private var model
 
     var body: some View {
+        @Bindable var model = model
         GeometryReader { proxy in
             let compact = proxy.size.height < 680
             ZStack {
                 BackgroundView()
-                GameColumn()
+                GameColumn(safeBottom: proxy.safeAreaInsets.bottom)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
                     .frame(maxWidth: 552)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 FlightLayer()
                 CelebrationLayer()
-                OverlayHost()
             }
             .environment(\.compact, compact)
             .coordinateSpace(name: Self.space)
         }
         .foregroundStyle(Theme.fg)
         .font(Theme.body(15))
+        .sheet(item: $model.overlay) { overlay in
+            Group {
+                switch overlay {
+                case .help: HelpSheet()
+                case .days: CalendarSheet()
+                }
+            }
+            .environment(model)
+        }
     }
 }
 
-/// Brand row, tabs, day switcher and the stage.
+/// The top row, the stage and the floating level bar, which sits low like a system tab bar.
 struct GameColumn: View {
     @Environment(GameModel.self) private var model
+    let safeBottom: CGFloat
 
     var body: some View {
         VStack(spacing: 8) {
-            TopBar().modifier(Recedes(amount: 0.22, scales: true))
-            if !model.isTutorial {
-                LevelTabs().modifier(Recedes(amount: 0.22, scales: true))
-                DayNav().modifier(Recedes(amount: 0.22, scales: true))
-            }
+            TopBar()
             Group {
                 if model.result != nil {
                     ResultStage()
@@ -47,22 +53,13 @@ struct GameColumn: View {
                 }
             }
             .modifier(SlideIn())
+            if !model.isTutorial {
+                LevelBar()
+            }
         }
-    }
-}
-
-/// Chrome fades back while a word is being spelled, with no layout change.
-struct Recedes: ViewModifier {
-    @Environment(GameModel.self) private var model
-    let amount: Double
-    let scales: Bool
-
-    func body(content: Content) -> some View {
-        let spelling = model.trayActive
-        content
-            .opacity(spelling ? amount : 1)
-            .scaleEffect(spelling && scales ? 0.94 : 1)
-            .animation(.easeOut(duration: 0.35), value: spelling)
+        .padding(.top, 4)
+        .padding(.bottom, model.isTutorial ? max(safeBottom, 10) : max(safeBottom - 14, 10))
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }
 
@@ -93,14 +90,51 @@ struct SlideIn: ViewModifier {
     }
 }
 
-/// Stacks the goal, tray, board and status. The board takes what it can up to its honeycomb height, and any height
-/// left over mostly goes above, which keeps the board in the thumb zone on tall phones.
+/// A sideways swipe moves between days. A shortcut for the calendar, so nothing depends on finding it.
+struct DaySwipe: ViewModifier {
+    @Environment(GameModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            DragGesture(minimumDistance: 24).onEnded { value in
+                let dx = value.translation.width, dy = value.translation.height
+                guard abs(dx) > 60, abs(dx) > abs(dy) * 1.5, !model.trayActive, !model.isTutorial else { return }
+                if dx > 0 { model.previousDay() } else { model.nextDay() }
+            }
+        )
+    }
+}
+
+/// The way home from an earlier day.
+struct BackToToday: View {
+    @Environment(GameModel.self) private var model
+
+    var body: some View {
+        if model.showsToday, !model.isTutorial {
+            Button(action: model.goToToday) {
+                HStack(spacing: 3) {
+                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold))
+                    Text("Back to Today")
+                }
+                .font(Theme.body(14))
+                .foregroundStyle(Theme.accent)
+                .frame(minHeight: 30)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressScale())
+            .accessibilityIdentifier("today-button")
+        }
+    }
+}
+
+/// Stacks the goal, tray and board. The board and tray stay low in the thumb zone, and the goal sits in the middle of
+/// whatever height is left. The board takes what it can up to its honeycomb height.
 struct StageLayout: Layout {
     var spacing: CGFloat = 6
     var boardHeight: CGFloat
     var minBoardHeight: CGFloat = 110
-    /// Share of the spare height placed above the content.
-    var topShare: CGFloat = 0.72
+    /// Share of the spare height placed above the goal. The rest goes below it.
+    var topShare: CGFloat = 0.5
 
     private func heights(_ subviews: Subviews, width: CGFloat, available: CGFloat) -> (sizes: [CGFloat], spare: CGFloat) {
         var sizes = subviews.map { view -> CGFloat in
@@ -121,9 +155,10 @@ struct StageLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let (sizes, spare) = heights(subviews, width: bounds.width, available: bounds.height)
         var y = bounds.minY + spare * topShare
-        for (view, height) in zip(subviews, sizes) {
+        for (index, (view, height)) in zip(subviews, sizes).enumerated() {
             view.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: height))
             y += height + spacing
+            if index == 0 { y += spare * (1 - topShare) }
         }
     }
 }
@@ -143,9 +178,6 @@ struct PlayStage: View {
                 GoalView()
                 TrayView()
                 BoardView().layoutValue(key: IsBoard.self, value: true)
-                if !model.isTutorial {
-                    StatusRow()
-                }
             }
         }
     }

@@ -64,8 +64,10 @@ struct CelebrationBubble: Identifiable, Equatable {
     let duration: Double
 }
 
-enum Overlay: Equatable {
+enum Overlay: String, Identifiable, Equatable {
     case help, days
+
+    var id: String { rawValue }
 }
 
 enum SlideDirection: Equatable {

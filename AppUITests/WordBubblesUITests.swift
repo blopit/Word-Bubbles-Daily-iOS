@@ -124,7 +124,7 @@ final class WordBubblesUITests: XCTestCase {
         launch(skipTutorial: false)
         XCTAssertTrue(bubble("RA").waitForExistence(timeout: 10))
         XCTAssertFalse(any("tab-easy").exists, "tutorial hides the tabs")
-        XCTAssertFalse(any("prev-day").exists, "tutorial hides the day switcher")
+        XCTAssertFalse(any("days-button").exists, "tutorial hides the calendar")
         XCTAssertFalse(any("hint-button").exists, "tutorial hides the score")
         wait(1)
         shot("tutorial")
@@ -140,6 +140,14 @@ final class WordBubblesUITests: XCTestCase {
         any("result-primary").tap()
         XCTAssertTrue(any("tab-easy").waitForExistence(timeout: 5))
         XCTAssertTrue(any("hint-button").exists)
+    }
+
+    func testTheTutorialCanBeSkipped() {
+        launch(skipTutorial: false)
+        XCTAssertTrue(any("skip-tutorial").waitForExistence(timeout: 10))
+        any("skip-tutorial").tap()
+        XCTAssertTrue(any("tab-easy").waitForExistence(timeout: 5))
+        XCTAssertFalse(any("skip-tutorial").exists)
     }
 
     func testPlayAWholeEasyBoardToTheResultCard() {
@@ -214,42 +222,57 @@ final class WordBubblesUITests: XCTestCase {
         XCTAssertFalse(any("tile-\(found.aText)").exists)
     }
 
-    func testHelpAndDaysOpenAndClose() {
-        launch(skipTutorial: true)
-        XCTAssertTrue(any("help-button").waitForExistence(timeout: 10))
-
+    private func openHelp() {
+        any("more-menu").tap()
+        XCTAssertTrue(any("help-button").waitForExistence(timeout: 3))
         any("help-button").tap()
         XCTAssertTrue(any("help-close").waitForExistence(timeout: 3))
-        wait(0.4)
+    }
+
+    func testHelpAndDaysOpenAndClose() {
+        launch(skipTutorial: true)
+        XCTAssertTrue(any("more-menu").waitForExistence(timeout: 10))
+
+        any("more-menu").tap()
+        wait(0.6)
+        shot("menu")
+        any("help-button").tap()
+        XCTAssertTrue(any("help-close").waitForExistence(timeout: 3))
+        wait(0.6)
         shot("help")
-        any("card-close").tap()
-        wait(0.4)
+        any("help-close").tap()
+        wait(0.6)
         XCTAssertFalse(any("help-close").exists)
 
         any("days-button").tap()
         XCTAssertTrue(any("countdown").waitForExistence(timeout: 3))
         XCTAssertTrue(any("day-row-\(today)").waitForExistence(timeout: 3))
-        wait(0.4)
+        wait(0.6)
         shot("days")
         any("card-close").tap()
-        wait(0.4)
+        wait(0.6)
         XCTAssertFalse(any("countdown").exists)
-
-        any("help-button").tap()
-        XCTAssertTrue(any("help-close").waitForExistence(timeout: 3))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5)).tap()
-        wait(0.4)
-        XCTAssertFalse(any("help-close").exists, "tapping outside closes")
     }
 
     func testDayNavigationAndTabs() {
         launch(skipTutorial: true)
-        XCTAssertTrue(any("prev-day").waitForExistence(timeout: 10))
-        any("prev-day").tap()
-        XCTAssertTrue(any("today-button").waitForExistence(timeout: 3))
+        XCTAssertTrue(any("theme").waitForExistence(timeout: 10))
+        wait(0.5)
+        any("theme").swipeRight()
+        XCTAssertTrue(any("today-button").waitForExistence(timeout: 3), "a sideways swipe on the goal goes back a day")
+        wait(0.5)
+        shot("earlier-day")
         any("today-button").tap()
         wait(0.5)
         XCTAssertFalse(any("today-button").exists)
+
+        any("days-button").tap()
+        XCTAssertTrue(any("day-row-\(today - 1)").waitForExistence(timeout: 3))
+        any("day-row-\(today - 1)").tap()
+        XCTAssertTrue(any("today-button").waitForExistence(timeout: 3), "the calendar opens the day")
+        any("today-button").tap()
+        wait(0.5)
+
         any("tab-medium").tap()
         let theme = GameData.shared.puzzle(day: today, level: .medium).theme
         XCTAssertTrue(any("theme").waitForExistence(timeout: 3))
@@ -265,10 +288,14 @@ final class WordBubblesUITests: XCTestCase {
         wait(0.6)
         any("hint-button").tap()
         wait(0.5)
+        shot("hint-question")
+        any("hint-button").tap()
+        wait(0.5)
         shot("hinted")
         bubble(puzzle.chunksByWord[1][0]).tap()
-        wait(0.5)
+        wait(0.6)
         XCTAssertTrue(any("clear-button").exists)
+        XCTAssertFalse(any("hint-button").exists, "the tray takes the whole row while spelling")
         shot("spelling")
     }
 
@@ -282,7 +309,7 @@ final class WordBubblesUITests: XCTestCase {
         }
     }
 
-    func testBonusWordFliesToItsChipAndCombosHeatTheTray() {
+    func testBonusWordStaysHiddenUntilTheResultAndCombosHeatTheTray() {
         launch(skipTutorial: true)
         let puzzle = GameData.shared.puzzle(day: today, level: .easy)
         let entries = GameData.shared.bonusEntries(day: today, level: .easy)
@@ -294,9 +321,10 @@ final class WordBubblesUITests: XCTestCase {
         for piece in order { bubble(piece).tap() }
         wait(0.1)
         shot("bonus-fuse")
-        XCTAssertTrue(any("bonus-chip-\(entry.word)").waitForExistence(timeout: 3))
-        wait(0.7)
-        shot("bonus-chip")
+        wait(1.1)
+        shot("bonus-banked")
+        XCTAssertFalse(app.staticTexts[entry.word].exists, "bonus words wait for the score screen")
+        XCTAssertFalse(any("clear-button").exists, "a bonus that leads nowhere empties the tray")
 
         var live = puzzle.bubbles.map(\.text)
         for chunks in puzzle.chunksByWord.prefix(puzzle.words.count - 1) {
@@ -317,7 +345,7 @@ final class WordBubblesUITests: XCTestCase {
         app.terminate()
         testPlayAWholeEasyBoardToTheResultCard()
         app.terminate()
-        testBonusWordFliesToItsChipAndCombosHeatTheTray()
+        testBonusWordStaysHiddenUntilTheResultAndCombosHeatTheTray()
     }
 
     func testLandscapeOnIPad() throws {
@@ -329,9 +357,8 @@ final class WordBubblesUITests: XCTestCase {
         shot("landscape")
         XCTAssertTrue(any("hint-button").isHittable)
         XCTAssertTrue(any("tab-hard").isHittable)
-        any("help-button").tap()
-        XCTAssertTrue(any("help-close").waitForExistence(timeout: 3))
-        wait(0.4)
+        openHelp()
+        wait(0.6)
         shot("landscape-help")
     }
 }

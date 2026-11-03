@@ -1,69 +1,23 @@
 import SwiftUI
 import WordBubblesCore
 
-/// `.btn`.
-struct ResultStyleButton: View {
-    enum Style { case primary, secondary }
+/// A glass action on the score screen. One prominent button says what to do next, and the rest stay quiet.
+struct GlassActionLabel: View {
     let title: String
     var systemImage: String?
-    let style: Style
-    let id: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ButtonFace(title: title, systemImage: systemImage, style: style)
-        }
-        .buttonStyle(PressScale(amount: 0.96))
-        .accessibilityIdentifier(id)
-    }
-}
-
-struct ButtonFace: View {
-    let title: String
-    var systemImage: String?
-    let style: ResultStyleButton.Style
+    var prominent = false
 
     var body: some View {
         HStack(spacing: 7) {
-            if let systemImage { Image(systemName: systemImage).font(.system(size: 15, weight: .bold)) }
-            Text(title).font(Theme.body(15)).lineLimit(1).minimumScaleFactor(0.8)
+            if let systemImage { Image(systemName: systemImage) }
+            Text(title).lineLimit(1).minimumScaleFactor(0.75)
         }
-        .foregroundStyle(style == .primary ? Theme.onAccent : Theme.fg)
-        .padding(.horizontal, 18)
-        .frame(maxWidth: .infinity)
-        .frame(height: 48)
-        .background {
-            if style == .primary {
-                Capsule().fill(Theme.accentVertical).shadow(color: Theme.accentGlow, radius: 10, y: 8)
-            } else {
-                Capsule().fill(Theme.glass).overlay { Capsule().strokeBorder(Theme.glassBorder, lineWidth: 1) }
-            }
-        }
+        .font(Theme.text(prominent ? .body : .subheadline))
+        .foregroundStyle(prominent ? Theme.onAccent : Theme.fg)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: prominent ? 52 : 44)
+        .floatingGlass(in: Capsule(), tint: prominent ? Theme.accent : nil, interactive: true)
         .contentShape(Capsule())
-    }
-}
-
-/// `.btn.mini`.
-struct MiniFace: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: systemImage).font(.system(size: 17, weight: .semibold))
-            Text(title).font(Theme.body(12)).lineLimit(1).minimumScaleFactor(0.8)
-        }
-        .foregroundStyle(Theme.fg)
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity)
-        .frame(height: 62)
-        .background {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Theme.glass)
-                .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.glassBorder, lineWidth: 1) }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 
@@ -78,7 +32,8 @@ extension ResultIcon {
     }
 }
 
-/// `#result`: the card in place of the board, scrolling only if it has to.
+/// `#result`: the score screen, in place of the board. Its content sits on the game's own background, with what to
+/// do next floating below it, always in reach however long the content runs.
 struct ResultStage: View {
     @Environment(GameModel.self) private var model
 
@@ -88,46 +43,108 @@ struct ResultStage: View {
                 Group {
                     switch model.result {
                     case let .tutorial(result)?:
-                        TutorialResultCard(result: result)
+                        TutorialResultContent(result: result)
                     case let .board(result)?:
-                        BoardResultCard(result: result, animated: model.resultAnimates)
+                        BoardResultContent(result: result, animated: model.resultAnimates)
                     case nil:
                         EmptyView()
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height - actionsHeight)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .scrollClipDisabled()
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ResultActions(primary: primary, secondary: secondary)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { actionsHeight = $0 }
+            }
+            .modifier(DaySwipe())
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("result-stage")
+    }
+
+    @State private var actionsHeight: CGFloat = 0
+
+    private var primary: ResultButton? {
+        switch model.result {
+        case let .tutorial(result)?: return result.primary
+        case let .board(result)?: return result.primary
+        case nil: return nil
+        }
+    }
+
+    private var secondary: [ResultButton] {
+        if case let .board(result)? = model.result { return result.secondary }
+        return []
     }
 }
 
-struct TutorialResultCard: View {
+private struct ResultActions: View {
     @Environment(GameModel.self) private var model
+    let primary: ResultButton?
+    let secondary: [ResultButton]
+
+    var body: some View {
+        GlassGroup {
+            VStack(spacing: 8) {
+                if let primary {
+                    Button {
+                        model.perform(primary.action)
+                    } label: {
+                        GlassActionLabel(title: primary.label, systemImage: primary.icon.symbol, prominent: true)
+                    }
+                    .buttonStyle(PressScale(amount: 0.96))
+                    .accessibilityIdentifier("result-primary")
+                }
+                if !secondary.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(Array(secondary.enumerated()), id: \.offset) { _, button in
+                            secondaryButton(button)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private func secondaryButton(_ button: ResultButton) -> some View {
+        if button.action == .share {
+            ShareLink(item: model.shareText) {
+                GlassActionLabel(title: button.label, systemImage: button.icon.symbol)
+            }
+            .buttonStyle(PressScale(amount: 0.96))
+            .accessibilityIdentifier("share-button")
+        } else {
+            Button {
+                model.perform(button.action)
+            } label: {
+                GlassActionLabel(title: button.label, systemImage: button.icon.symbol)
+            }
+            .buttonStyle(PressScale(amount: 0.96))
+            .accessibilityIdentifier("result-secondary")
+        }
+    }
+}
+
+struct TutorialResultContent: View {
     let result: TutorialResult
 
     var body: some View {
         VStack(spacing: 12) {
             Text(result.title)
-                .font(Theme.display(32))
-                .kerning(-0.64)
+                .font(Theme.text(.largeTitle, weight: .bold))
                 .accessibilityAddTraits(.isHeader)
             Text(result.body)
-                .font(Theme.body(14, weight: .bold))
+                .font(Theme.text(.body))
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
+                .frame(maxWidth: 320)
                 .fixedSize(horizontal: false, vertical: true)
-            ResultStyleButton(
-                title: result.primary.label, systemImage: result.primary.icon.symbol, style: .primary, id: "result-primary"
-            ) { model.perform(result.primary.action) }
         }
-        .padding(.vertical, 20)
-        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
-        .glassCard()
         .modifier(RiseIn())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("result-card")
@@ -149,24 +166,26 @@ struct RiseIn: ViewModifier {
     }
 }
 
-struct BoardResultCard: View {
-    @Environment(GameModel.self) private var model
+struct BoardResultContent: View {
     let result: BoardResult
     let animated: Bool
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text(result.tag.uppercased())
-                .font(Theme.body(12))
-                .kerning(1.2)
-                .foregroundStyle(Theme.muted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            BigStars(stars: result.stars, animated: animated)
+        VStack(spacing: 14) {
+            BackToToday()
+            VStack(spacing: 6) {
+                Text(result.tag.uppercased())
+                    .font(Theme.text(.caption))
+                    .kerning(1.2)
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                BigStars(stars: result.stars, animated: animated)
+            }
             bestLine
             pills
             Text(result.pointsLine)
-                .font(Theme.body(14, weight: .bold))
+                .font(Theme.text(.subheadline))
                 .foregroundStyle(Theme.muted)
                 .monospacedDigit()
             FlowLayout(spacing: 8, lineSpacing: 8) {
@@ -175,39 +194,32 @@ struct BoardResultCard: View {
                 }
             }
             if !result.bonusWords.isEmpty {
-                FlowLayout(spacing: 8, lineSpacing: 8) {
-                    ForEach(result.bonusWords, id: \.word) { bonus in
-                        chip(
-                            bonus.word, fill: bonus.isSecret ? Theme.secretDiagonal : Theme.goldDiagonal,
-                            ink: bonus.isSecret ? Theme.onSecret : Theme.onGold
-                        )
+                VStack(spacing: 8) {
+                    Text("Bonus words")
+                        .font(Theme.text(.caption))
+                        .foregroundStyle(Theme.muted)
+                    FlowLayout(spacing: 8, lineSpacing: 8) {
+                        ForEach(result.bonusWords, id: \.word) { bonus in
+                            chip(
+                                bonus.word, fill: bonus.isSecret ? Theme.secretDiagonal : Theme.goldDiagonal,
+                                ink: bonus.isSecret ? Theme.onSecret : Theme.onGold
+                            )
+                        }
                     }
                 }
             }
             ForEach(Array(result.tips.enumerated()), id: \.offset) { _, tip in
                 styled(tip, bold: Theme.hint, secret: Theme.secretInk, plain: Theme.fg)
-                    .font(Theme.body(14, weight: .bold))
+                    .font(Theme.text(.subheadline))
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
+                    .frame(maxWidth: 320)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !result.summary.isEmpty { summary }
             if result.showsCountdown { CountdownText() }
-            if let primary = result.primary {
-                ResultStyleButton(title: primary.label, systemImage: primary.icon.symbol, style: .primary, id: "result-primary") {
-                    model.perform(primary.action)
-                }
-            }
-            HStack(spacing: 8) {
-                ForEach(Array(result.secondary.enumerated()), id: \.offset) { _, button in
-                    secondary(button)
-                }
-            }
         }
-        .padding(.vertical, 20)
-        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity)
-        .glassCard()
         .modifier(RiseIn())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("result-card")
@@ -222,7 +234,7 @@ struct BoardResultCard: View {
                 MedalDot(key: result.best.key, size: 22)
             }
             Text(result.best.text)
-                .font(Theme.body(16))
+                .font(Theme.text(.title3))
                 .monospacedDigit()
         }
         .accessibilityElement(children: .combine)
@@ -258,30 +270,11 @@ struct BoardResultCard: View {
                 .accessibilityElement(children: .combine)
             }
         }
-        .font(Theme.body(14))
+        .font(Theme.text(.subheadline))
         .monospacedDigit()
         .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 18))
-    }
-
-    @ViewBuilder
-    private func secondary(_ button: ResultButton) -> some View {
-        if button.action == .share {
-            ShareLink(item: model.shareText) {
-                MiniFace(title: button.label, systemImage: button.icon.symbol)
-            }
-            .buttonStyle(PressScale(amount: 0.96))
-            .accessibilityIdentifier("share-button")
-        } else {
-            Button {
-                model.perform(button.action)
-            } label: {
-                MiniFace(title: button.label, systemImage: button.icon.symbol)
-            }
-            .buttonStyle(PressScale(amount: 0.96))
-            .accessibilityIdentifier("result-secondary")
-        }
+        .padding(.horizontal, 14)
+        .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 
@@ -297,12 +290,12 @@ struct PillView: View {
                 MedalDot(key: pill.key)
             }
             Text(pill.text)
-                .font(Theme.body(12))
+                .font(Theme.text(.caption))
                 .monospacedDigit()
         }
         .foregroundStyle(pill.isEmpty ? Theme.muted : pill.isHit || pill.icon != nil ? Theme.fg : Theme.muted)
         .padding(.horizontal, 10)
-        .frame(height: 28)
+        .frame(minHeight: 28)
         .background(Theme.slotBg, in: Capsule())
         .overlay { if pill.isHit { Capsule().strokeBorder(Theme.fg, lineWidth: 2) } }
         .accessibilityElement(children: .ignore)
@@ -343,7 +336,7 @@ struct BigStar: View {
 
     var body: some View {
         Text("★")
-            .font(.system(size: 40, weight: .regular, design: .rounded))
+            .font(.system(size: 52, weight: .regular, design: .rounded))
             .foregroundStyle(on ? Theme.gold2 : Theme.slotBorder)
             .opacity(on && animated && !trigger && !reduceMotion ? 0 : 1)
             .keyframeAnimator(initialValue: Land(), trigger: trigger) { view, value in

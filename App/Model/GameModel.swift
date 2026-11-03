@@ -17,6 +17,7 @@ struct GameDependencies {
     var reduceMotion: () -> Bool
     var usesNetwork = true
     var calendar: Calendar = .current
+    var defaults: UserDefaults = .standard
 }
 
 /// The screen's state. The session is the truth and is deliberately not observed: the properties below are what the
@@ -30,6 +31,10 @@ final class GameModel {
     static let clockSeconds = 0.5
     static let dayCheckSeconds = 60.0
     static let recordsSeconds = 30.0
+    /// How long the hint button waits for a second tap before it stops asking.
+    static let hintArmSeconds = 3.0
+    static let hapticsKey = "wordbubbles-haptics"
+    static let postsTimesKey = "wordbubbles-post-times"
 
     // MARK: Dependencies
 
@@ -44,6 +49,7 @@ final class GameModel {
     @ObservationIgnored let reduceMotion: () -> Bool
     @ObservationIgnored let usesNetwork: Bool
     @ObservationIgnored let calendar: Calendar
+    @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored let formatter = DayFormatter()
 
     // MARK: Game state, not observed
@@ -59,6 +65,7 @@ final class GameModel {
     @ObservationIgnored var flightFinishers: [Int: () -> Void] = [:]
     @ObservationIgnored var nextFlightID = 0
     @ObservationIgnored var flashWork: ScheduledWork?
+    @ObservationIgnored var hintArmWork: ScheduledWork?
     @ObservationIgnored var clockWork: ScheduledWork?
     @ObservationIgnored var dayWork: ScheduledWork?
     @ObservationIgnored var recordsWork: ScheduledWork?
@@ -73,7 +80,7 @@ final class GameModel {
     @ObservationIgnored var boardFrame: CGRect = .zero
     @ObservationIgnored var trayFrame: CGRect = .zero
     @ObservationIgnored var slotFrames: [Int: CGRect] = [:]
-    @ObservationIgnored var chipFrames: [String: CGRect] = [:]
+    @ObservationIgnored var scoreFrame: CGRect = .zero
 
     // MARK: Observed display state
 
@@ -88,8 +95,6 @@ final class GameModel {
     var tabs: [TabDisplay] = []
 
     var slots: [SlotDisplay] = []
-    var bonusChips: [BonusChip]?
-    var arrivingChip: String?
 
     var tiles: [TrayTile] = []
     var trayActive = false
@@ -104,6 +109,7 @@ final class GameModel {
     var heat = 0
     var shakeCount = 0
     var bonusButton: BonusButton?
+    var hintArmed = false
     var flash: Flash?
     var flashCount = 0
 
@@ -130,9 +136,12 @@ final class GameModel {
     var slideCount = 0
     var slideDirection = SlideDirection.left
     var soundOn: Bool
+    var hapticsOn: Bool
+    var postsTimes: Bool
 
     var isTutorial: Bool { level == .tutorial }
     var flightDuration: Double { reduceMotion() ? 0 : Self.flightSeconds }
+    var dayTitle: String { day == store.today ? "Today" : formatter.short(day: day) }
 
     init(_ dependencies: GameDependencies) {
         store = dependencies.store
@@ -146,7 +155,10 @@ final class GameModel {
         reduceMotion = dependencies.reduceMotion
         usesNetwork = dependencies.usesNetwork
         calendar = dependencies.calendar
+        defaults = dependencies.defaults
         soundOn = dependencies.sound.isOn
+        hapticsOn = dependencies.defaults.object(forKey: Self.hapticsKey) as? Bool ?? true
+        postsTimes = dependencies.defaults.object(forKey: Self.postsTimesKey) as? Bool ?? true
 
         let today = dependencies.store.today
         let first = dependencies.store.initialLevel(day: today)
@@ -186,13 +198,11 @@ final class GameModel {
         tiles = []
         lockTone = nil
         trayFrozen = false
-        arrivingChip = nil
         slotFrames = [:]
-        chipFrames = [:]
+        disarmHint()
         clearFlash()
 
         theme = session.puzzle.theme
-        prompt = session.prompt
         bubbles = session.puzzle.bubbles
         let consumed = session.consumed
         bubbleStates = Dictionary(uniqueKeysWithValues: bubbles.map { ($0.id, BubbleState(consumed: consumed.contains($0.id))) })
@@ -233,7 +243,7 @@ final class GameModel {
         if self[keyPath: path] != value { self[keyPath: path] = value }
     }
 
-    /// Combo, score, stars and the bonus bar.
+    /// Combo, score and stars.
     func syncScore() {
         let session = self.session
         set(\.comboText, session.comboText)
@@ -241,18 +251,26 @@ final class GameModel {
         set(\.points, session.progress.points)
         set(\.stars, session.rank.stars)
         set(\.scoreLabel, session.scoreAccessibilityLabel)
-        set(\.bonusChips, session.bonusBar)
     }
 
     func syncSlots() {
         set(\.slots, session.slots.enumerated().map { index, slot in
             SlotDisplay(id: index, slot: slot, arriving: slots.first { $0.id == index }?.arriving ?? false)
         })
+        set(\.prompt, remainingPrompt ?? session.prompt)
         let targets = session.hintTargets
         for (id, state) in bubbleStates {
             let number = targets[id]
             if state.hintNumber != number { state.hintNumber = number }
         }
+    }
+
+    /// Once a word is found, the tray stops teaching and says how far there is to go.
+    private var remainingPrompt: String? {
+        guard !isTutorial, !session.progress.found.isEmpty else { return nil }
+        let left = session.puzzle.words.count - session.progress.found.count
+        guard left > 0 else { return nil }
+        return left == 1 ? "1 word left" : "\(left) words left"
     }
 
     func syncTrayText() {
@@ -334,6 +352,7 @@ final class GameModel {
     /// A finger came down on the board.
     func touchBegan(at point: CGPoint) {
         lastHit = nil
+        disarmHint()
         guard !inputBlocked, result == nil else { return }
         let hit = hitTest(point)
         lastHit = hit
@@ -360,17 +379,20 @@ final class GameModel {
 
     /// A bubble activated without a touch path, as VoiceOver does.
     func activateBubble(_ id: String) {
+        disarmHint()
         guard !inputBlocked, result == nil else { return }
         apply(swipe.pointerDown(hit: id, session: &session))
         swipe.pointerUp(session: session)
     }
 
     func tapTile(_ id: String) {
+        disarmHint()
         guard !inputBlocked else { return }
         apply(session.removeFromChain(id))
     }
 
     func clearTray() {
+        disarmHint()
         guard !inputBlocked else { return }
         apply(session.clearChain())
     }
@@ -380,13 +402,32 @@ final class GameModel {
         apply(session.collectBonus(word))
     }
 
+    /// The first hint of a board costs its medal, so while there is one to lose, the button asks before it acts.
     func useHint() {
         guard !inputBlocked else { return }
+        if needsHintConfirmation, !hintArmed {
+            hintArmed = true
+            hintArmWork?.cancel()
+            hintArmWork = scheduler.after(Self.hintArmSeconds) { [weak self] in self?.disarmHint() }
+            return
+        }
+        disarmHint()
         apply(session.hint())
+    }
+
+    private var needsHintConfirmation: Bool {
+        !session.progress.forfeitedMedal && session.clock?.medal != nil
+    }
+
+    func disarmHint() {
+        hintArmWork?.cancel()
+        hintArmWork = nil
+        if hintArmed { hintArmed = false }
     }
 
     func shuffle() {
         guard !inputBlocked else { return }
+        disarmHint()
         apply(session.shuffle())
     }
 
@@ -465,7 +506,7 @@ final class GameModel {
         case let .sound(effect):
             sound.play(effect)
         case let .haptic(haptic):
-            haptics.play(haptic)
+            if hapticsOn { haptics.play(haptic) }
         case let .flash(flash):
             show(flash)
         case .shakeTray:
@@ -485,9 +526,9 @@ final class GameModel {
         case let .landSlot(index):
             landWord()
             if let at = slots.firstIndex(where: { $0.id == index }) { slots[at].arriving = false }
-        case let .landChip(word):
+        case .landScore:
             landWord()
-            if arrivingChip == word { arrivingChip = nil }
+            scoreBump += 1
         case .celebrate:
             celebrate()
         case .showResult:
@@ -530,9 +571,8 @@ final class GameModel {
         case let .bonus(word, tone, ids):
             clearTrayAfterLock()
             for id in ids { bubbleStates[id]?.selected = false }
-            if flightDuration > 0 { arrivingChip = word }
             syncScore()
-            flyWord(word, tone: tone, from: wordRect) { [weak self] in self?.chipFrames[word] }
+            flyWord(word, tone: tone, from: wordRect) { [weak self] in self?.scoreFrame }
         case let .reveal(_, ids):
             consume(ids)
             syncSlots()
@@ -743,6 +783,13 @@ final class GameModel {
         overlay = .days
     }
 
+    /// Leaves the tutorial for today's first open board, and doesn't bring it back.
+    func skipTutorial() {
+        guard !inputBlocked else { return }
+        store.setTutorialDone()
+        open(day: store.today, level: store.initialLevel(day: store.today))
+    }
+
     func closeOverlay() {
         overlay = nil
     }
@@ -762,6 +809,17 @@ final class GameModel {
         sound.isOn.toggle()
         soundOn = sound.isOn
         if soundOn { sound.play(.pick(index: 2, lift: 0)) }
+    }
+
+    func setHaptics(_ on: Bool) {
+        hapticsOn = on
+        defaults.set(on, forKey: Self.hapticsKey)
+        if on { haptics.play(.pick) }
+    }
+
+    func setPostsTimes(_ on: Bool) {
+        postsTimes = on
+        defaults.set(on, forKey: Self.postsTimesKey)
     }
 
     // MARK: Results and records
@@ -803,7 +861,7 @@ final class GameModel {
         syncHeader()
         syncScore()
         showResultCard()
-        guard usesNetwork, let board = session.finishedBoard else { return }
+        guard usesNetwork, postsTimes, let board = session.finishedBoard else { return }
         let finishedDay = day, finishedLevel = level
         Task { [weak self, records, place] in
             let wins = await records.submitFinish(board, place: place)

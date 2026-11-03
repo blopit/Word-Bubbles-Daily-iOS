@@ -61,6 +61,7 @@ web game leaves on screen (`.starEarned` comes before `.wordLocked` for that rea
 | `.unpicked` | `unpick` |
 | `.wordLocked` | `lock(combo)`, plus a 10ms vibrate; `win` if `completesBoard` (via `.finished`) |
 | `.bonusCollected` | `bonus` |
+| `.bonusInline` | `bonus` |
 | `.nearMiss` | `near`, shake the tray |
 | `.tooManyLetters` | `wrong`, shake the tray |
 | `.comboBroken` | `crack` only when `wasCombo` |
@@ -408,12 +409,9 @@ public enum GameText {
 
     public enum Help {
         public static let title: String
-        public static let steps: [[TextSegment]]
         public static let demoChunks: [String]
         public static let demoWord: String
-        public static let footnote: String
         public static let replayTutorial: String
-        public static let close: String
     }
     public enum Days {
         public static let title: String

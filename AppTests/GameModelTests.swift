@@ -59,6 +59,7 @@ final class GameModelTests: XCTestCase {
     var haptics: RecordingHaptics!
     var date = Date(timeIntervalSince1970: 1_800_000_000)
     var motionReduced = false
+    var defaults: UserDefaults!
 
     func makeModel(tutorialDone: Bool = true, today: Int? = nil) -> GameModel {
         scheduler = VirtualScheduler()
@@ -69,12 +70,13 @@ final class GameModelTests: XCTestCase {
         date = date.addingTimeInterval(Double(day - Engine.dayNumber(for: date)) * 86_400)
         let store = ProgressStore(url: url, today: day)
         if tutorialDone { store.setTutorialDone() }
+        defaults = UserDefaults(suiteName: "wb-tests-\(UUID().uuidString)")
         let model = GameModel(GameDependencies(
             store: store, records: RecordsClient(transport: FailingTransport()), place: .nowhere,
             sound: sound, haptics: haptics, scheduler: scheduler,
             now: { [unowned self] in self.date },
             measure: { Double($0.count) * 12 }, reduceMotion: { [unowned self] in self.motionReduced },
-            usesNetwork: false
+            usesNetwork: false, defaults: defaults
         ))
         model.boardMeasured(CGRect(x: 16, y: 300, width: 358, height: 300))
         model.trayMeasured(CGRect(x: 16, y: 200, width: 358, height: 52))
@@ -341,10 +343,10 @@ final class GameModelTests: XCTestCase {
         return nil
     }
 
-    func testBonusFusesThenFliesToItsChipAndBubblesStayInPlay() throws {
+    func testBonusFusesThenFliesIntoTheScoreAndBubblesStayInPlay() throws {
         let board = try XCTUnwrap(bonusBoard())
         let model = makeModel(today: board.day)
-        model.chipFrames[board.word] = CGRect(x: 10, y: 150, width: 60, height: 26)
+        model.scoreFrame = CGRect(x: 150, y: 60, width: 90, height: 40)
         board.ids.forEach { tap(model, $0) }
         XCTAssertTrue(model.inputBlocked)
         scheduler.advance(0.21)
@@ -355,15 +357,13 @@ final class GameModelTests: XCTestCase {
         scheduler.advance(0.42)
         XCTAssertFalse(model.inputBlocked)
         XCTAssertTrue(model.tiles.isEmpty)
-        XCTAssertEqual(model.arrivingChip, board.word)
         XCTAssertTrue(sound.played.contains(.bonus))
         XCTAssertTrue(board.ids.allSatisfy { !model.bubbleStates[$0]!.selected && !model.bubbleStates[$0]!.consumed })
         scheduler.advance(0.03)
         XCTAssertEqual(model.flights.last?.kind, .word(board.secret ? .secret : .gold))
         scheduler.advance(0.33)
-        XCTAssertNil(model.arrivingChip)
-        XCTAssertTrue(model.flash!.text.hasPrefix(board.word))
-        XCTAssertEqual(model.bonusChips?.first?.word, board.word)
+        XCTAssertFalse(model.flash!.text.contains(board.word), "the word itself stays private")
+        XCTAssertEqual(model.session.progress.bonus, [board.word], "banked, and kept for the score screen")
     }
 
     func testVoiceOverActivationPicksAndPutsBack() {
@@ -377,6 +377,7 @@ final class GameModelTests: XCTestCase {
 
     func testHintShowsBadgeAndFlash() {
         let model = makeModel()
+        model.useHint()
         model.useHint()
         XCTAssertEqual(model.bubbleStates["0-0"]?.hintNumber, 1)
         XCTAssertTrue(model.flash!.text.hasPrefix("Starts with"))
@@ -533,5 +534,138 @@ final class GameModelTests: XCTestCase {
         let before = model.tiles[0].frame
         model.trayMeasured(CGRect(x: 0, y: 0, width: 500, height: 52))
         XCTAssertNotEqual(model.tiles[0].frame, before)
+    }
+
+    // MARK: Hints ask before they cost the medal
+
+    func testTheFirstHintAsksBeforeGivingUpTheMedal() {
+        let model = makeModel()
+        model.useHint()
+        XCTAssertTrue(model.hintArmed)
+        XCTAssertFalse(model.session.progress.usedHint, "nothing is spent yet")
+        XCTAssertTrue(sound.played.isEmpty)
+        model.useHint()
+        XCTAssertFalse(model.hintArmed)
+        XCTAssertTrue(model.session.progress.usedHint)
+    }
+
+    func testTheHintQuestionLapsesOnItsOwn() {
+        let model = makeModel()
+        model.useHint()
+        scheduler.advance(GameModel.hintArmSeconds + 0.1)
+        XCTAssertFalse(model.hintArmed)
+        model.useHint()
+        XCTAssertFalse(model.session.progress.usedHint, "it asks again")
+    }
+
+    func testTouchingTheBoardCancelsTheHintQuestion() {
+        let model = makeModel()
+        model.useHint()
+        tap(model, ids(model, word: 0)[0])
+        XCTAssertFalse(model.hintArmed)
+    }
+
+    func testLeavingTheBoardCancelsTheHintQuestion() {
+        let model = makeModel()
+        model.useHint()
+        model.select(level: .medium)
+        XCTAssertFalse(model.hintArmed)
+    }
+
+    func testHintsAfterTheFirstDoNotAsk() {
+        let model = makeModel()
+        model.useHint()
+        model.useHint()
+        let hints = model.session.progress.hints
+        model.useHint()
+        XCTAssertFalse(model.hintArmed)
+        XCTAssertNotEqual(model.session.progress.hints, hints, "it acted at once")
+    }
+
+    func testNoMedalLeftMeansNothingToAsk() {
+        let model = makeModel()
+        date = date.addingTimeInterval(590)
+        model.useHint()
+        XCTAssertFalse(model.hintArmed)
+        XCTAssertTrue(model.session.progress.usedHint)
+    }
+
+    // MARK: Bonus words wait for the score screen
+
+    func testAnInlineBonusLeavesTheTrayAndTheSwipeAlone() {
+        let (model, chunks) = makeModelWithInlineBonus()
+        for chunk in chunks { tap(model, chunk) }
+        XCTAssertFalse(model.inputBlocked)
+        XCTAssertEqual(model.tiles.map(\.id), chunks)
+        XCTAssertEqual(model.session.progress.bonus.count, 1)
+        XCTAssertEqual(sound.played.last, .bonus)
+        XCTAssertFalse(model.flash!.text.contains(model.session.progress.bonus[0]), "the word itself stays private")
+    }
+
+    /// A real board where the first pieces of a hidden word also spell a bonus word.
+    private func makeModelWithInlineBonus() -> (GameModel, [String]) {
+        for day in 2...200 {
+            let puzzle = GameData.shared.puzzle(day: day, level: .easy)
+            let keys = Set(GameData.shared.bonusEntries(day: day, level: .easy).map(\.key))
+            for (wordIndex, chunks) in puzzle.chunksByWord.enumerated() {
+                for end in chunks.indices.dropFirst().dropLast() where keys.contains(chunks[...end].sorted().joined(separator: "|")) {
+                    let model = makeModel(today: day)
+                    return (model, (0...end).map { "\(wordIndex)-\($0)" })
+                }
+            }
+        }
+        fatalError("no such board")
+    }
+
+    // MARK: The tray's quiet text
+
+    func testThePromptCountsWhatIsLeftOnceAWordIsFound() {
+        let model = makeModel()
+        XCTAssertEqual(model.prompt, "Tap bubbles in order")
+        spell(model, word: 0)
+        scheduler.advance(1)
+        let left = model.session.puzzle.words.count - 1
+        XCTAssertEqual(model.prompt, "\(left) words left")
+        spell(model, word: 1)
+        scheduler.advance(1)
+        XCTAssertEqual(model.prompt, "1 word left")
+    }
+
+    // MARK: Header
+
+    func testDayTitle() {
+        let model = makeModel()
+        XCTAssertEqual(model.dayTitle, "Today")
+        model.previousDay()
+        XCTAssertEqual(model.dayTitle, model.formatter.short(day: model.day))
+    }
+
+    // MARK: Tutorial
+
+    func testTheTutorialCanBeSkipped() {
+        let model = makeModel(tutorialDone: false)
+        XCTAssertEqual(model.level, .tutorial)
+        model.skipTutorial()
+        XCTAssertEqual(model.level, .easy)
+        XCTAssertTrue(model.store.tutorialDone)
+    }
+
+    // MARK: Settings
+
+    func testHapticsCanBeTurnedOffAndStayOff() {
+        let model = makeModel()
+        XCTAssertTrue(model.hapticsOn)
+        model.setHaptics(false)
+        tap(model, ids(model, word: 0)[0])
+        XCTAssertTrue(haptics.played.isEmpty)
+        XCTAssertEqual(defaults.object(forKey: GameModel.hapticsKey) as? Bool, false)
+    }
+
+    func testPostingTimesDefaultsOnAndIsRemembered() {
+        let model = makeModel()
+        XCTAssertTrue(model.postsTimes)
+        model.setPostsTimes(false)
+        XCTAssertFalse(model.postsTimes)
+        XCTAssertEqual(defaults.object(forKey: GameModel.postsTimesKey) as? Bool, false)
     }
 }

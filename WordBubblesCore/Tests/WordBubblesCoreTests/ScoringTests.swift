@@ -258,21 +258,9 @@ final class GameTextTests: XCTestCase {
 
     func testHelpCopyIsVerbatim() {
         XCTAssertEqual(GameText.Help.title, "How to play")
-        XCTAssertEqual(GameText.Help.steps.count, 5)
-        XCTAssertEqual(GameText.Help.steps[0], [.plain("Today's hidden words are cut into bubbles of 1 to 3 letters and scrambled.")])
-        XCTAssertEqual(GameText.Help.steps[1], [.plain("Tap or swipe the bubbles that belong together, in order. They fly into the tray, and when they make a word they click into place.")])
-        XCTAssertEqual(GameText.Help.steps[2], [.plain("Every word scores and nothing is ever taken away, so tap freely. More points earn more stars, up to 3, and a quick finish wins a bronze, silver or gold time medal. Using a hint removes that medal and any record: the finish still shows your time, as no medal. Hidden words in a row build a combo (up to ×4); putting a bubble back or using a hint starts it over.")])
-        XCTAssertEqual(GameText.Help.steps[3], [
-            .plain("Spelled a real word that isn't hidden? It's a "), .bold("bonus word"),
-            .plain(" and scores too. One that also fits the theme is a "), .bold("secret word"),
-            .plain(": it shows up in purple and scores five times a bonus. Find them early: once a hidden word uses its bubbles, they're gone."),
-        ])
-        XCTAssertEqual(GameText.Help.steps[4], [.plain("Stuck? "), .bold("Shuffle"), .plain(" re-deals the bubbles for free.")])
-        XCTAssertEqual(GameText.Help.footnote, "Three boards a day: Easy, Medium and Hard. New words at midnight. Earlier days stay open from the calendar.")
         XCTAssertEqual(GameText.Help.demoChunks, ["RA", "IN", "BOW"])
         XCTAssertEqual(GameText.Help.demoWord, "RAINBOW")
         XCTAssertEqual(GameText.Help.replayTutorial, "Replay tutorial")
-        XCTAssertEqual(GameText.Help.close, "Got it")
     }
 
     func testDaysCardCopy() {

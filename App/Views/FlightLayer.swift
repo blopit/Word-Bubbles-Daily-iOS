@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Everything flying between the board, tray, slots and chips, above the column. Each flight animates itself, so
+/// Everything flying between the board, tray, slots and score, above the column. Each flight animates itself, so
 /// a frame of flight redraws only that flight.
 struct FlightLayer: View {
     @Environment(GameModel.self) private var model
@@ -48,15 +48,17 @@ private struct FlightView: View, Animatable {
         Group {
             switch flight.kind {
             case .toTray:
-                chunk(radius: mix(flight.from.height / 2, 11), tileAmount: progress, width: width, height: height)
+                chunk(radius: mix(flight.from.height / 2, flight.to.height / 2), tileAmount: progress, width: width, height: height)
             case .toBoard:
-                chunk(radius: mix(11, flight.to.height / 2), tileAmount: 1 - progress, width: width, height: height)
+                chunk(radius: mix(flight.from.height / 2, flight.to.height / 2), tileAmount: 1 - progress, width: width, height: height)
             case let .word(tone):
+                // Shrinks to nothing on its way into the score, so the letters can't spill out of the pill.
                 Text(flight.text)
-                    .font(Theme.display(15))
-                    .kerning(15 * 0.06)
+                    .font(Theme.display(16))
+                    .kerning(16 * 0.06)
                     .lineLimit(1)
-                    .fixedSize()
+                    .minimumScaleFactor(0.1)
+                    .padding(.horizontal, 4)
                     .foregroundStyle(tone.ink)
                     .frame(width: width, height: height)
                     .background(tone.diagonalFill, in: Capsule())

@@ -67,7 +67,7 @@ final class ChoreographyTests: XCTestCase {
         XCTAssertEqual(cues([gold], at: 0.82), [
             .commit(.bonus(word: "PEA", tone: .gold, ids: ["0-0", "1-0"])), .sound(.bonus), .releaseInput,
         ])
-        XCTAssertEqual(cues([gold], at: 0.82 + lead + flight), [.landChip("PEA"), .flash(gold.flash!)])
+        XCTAssertEqual(cues([gold], at: 0.82 + lead + flight), [.landScore, .flash(gold.flash!)])
 
         let secret = GameEvent.bonusCollected(word: "PEA", isSecret: true, points: 75, ids: ["0-0"])
         XCTAssertEqual(cues([secret], at: 0.4), [.fuseTray(.secret, ids: ["0-0"])])
@@ -151,5 +151,13 @@ final class TrayLayoutTests: XCTestCase {
 
     func testEmpty() {
         XCTAssertTrue(TrayLayout.frames(texts: [], pillWidth: 300, pillHeight: 52, locked: false, measure: measure).rects.isEmpty)
+    }
+
+    func testAnInlineBonusPaysOutWithoutStoppingPlay() {
+        let inline = GameEvent.bonusInline(word: "BAN", isSecret: false, points: 15)
+        let timeline = Choreography.timeline(for: [inline], flight: 0.32)
+        XCTAssertEqual(timeline.map(\.cue), [.sound(.bonus), .haptic(.lock), .bumpScore, .flash(inline.flash!)])
+        XCTAssertTrue(timeline.allSatisfy { $0.at == 0 })
+        XCTAssertEqual(Choreography.blockDuration(for: [inline], flight: 0.32), 0)
     }
 }

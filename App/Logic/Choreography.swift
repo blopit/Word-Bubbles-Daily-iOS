@@ -25,7 +25,8 @@ enum Cue: Equatable, Sendable {
     case popBubbles([String])
     case commit(Commit)
     case landSlot(Int)
-    case landChip(String)
+    /// A bonus word has reached the score, which is where it stays until the result.
+    case landScore
     case celebrate
     case showResult
     case releaseInput
@@ -109,8 +110,13 @@ enum Choreography {
                 stars.forEach { starCues(bonusCommit, $0) }
                 add(bonusCommit, .releaseInput)
                 let land = bonusCommit + travel
-                add(land, .landChip(word))
+                add(land, .landScore)
                 if let flash = event.flash { add(land, .flash(flash)) }
+            case .bonusInline:
+                add(0, .sound(.bonus))
+                add(0, .haptic(.lock))
+                add(0, .bumpScore)
+                if let flash = event.flash { add(0, .flash(flash)) }
             case .bonusAlreadyFound:
                 if let flash = event.flash { add(0, .flash(flash)) }
             case .nearMiss:
