@@ -1,16 +1,23 @@
 import SwiftUI
 import WordBubblesCore
 
-/// The one row of chrome: the day on the left, the score in the middle, everything else behind "⋯".
+/// The one row of chrome: the day on the left, the score in the middle, the level and everything else on the right.
 struct TopBar: View {
     @Environment(GameModel.self) private var model
 
     var body: some View {
-        ZStack {
-            HStack(spacing: 0) {
-                if model.isTutorial { Brand() } else { DayButton() }
-                Spacer(minLength: 8)
+        BarLayout {
+            HStack(spacing: 6) {
+                if model.isTutorial {
+                    Brand()
+                } else {
+                    DayButton()
+                    TodayButton()
+                }
+            }
+            HStack(spacing: 6) {
                 if !model.isTutorial {
+                    LevelMenu()
                     MoreMenu()
                 } else if model.result == nil {
                     SkipButton()
@@ -20,7 +27,32 @@ struct TopBar: View {
                 ScoreHUD()
             }
         }
+        .animation(Theme.glide(0.3), value: model.showsToday)
         .frame(height: 44)
+    }
+}
+
+/// Leading and trailing groups at the edges, and an optional third view centered on the bar. When the leading group
+/// grows into it (the Today button on an earlier day), the center view moves right into the middle of the gap left.
+struct BarLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        CGSize(width: proposal.width ?? 358, height: 44)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count >= 2 else { return }
+        let leading = subviews[0].sizeThatFits(.unspecified)
+        let trailing = subviews[1].sizeThatFits(.unspecified)
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(leading))
+        subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: ProposedViewSize(trailing))
+        guard subviews.count > 2 else { return }
+        let center = subviews[2].sizeThatFits(.unspecified)
+        let low = bounds.minX + leading.width + spacing + center.width / 2
+        let high = bounds.maxX - trailing.width - spacing - center.width / 2
+        let x = low > bounds.midX ? (low + high) / 2 : bounds.midX
+        subviews[2].place(at: CGPoint(x: x, y: bounds.midY), anchor: .center, proposal: ProposedViewSize(center))
     }
 }
 
@@ -83,6 +115,29 @@ struct DayButton: View {
     }
 }
 
+/// The way home from an earlier day, beside the calendar. Steps aside while a word is being spelled.
+struct TodayButton: View {
+    @Environment(GameModel.self) private var model
+
+    var body: some View {
+        if model.showsToday, !model.trayActive {
+            Button("Today", action: model.goToToday)
+                .font(Theme.body(15))
+                .foregroundStyle(Theme.accent)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .floatingGlass(in: Capsule(), interactive: true)
+                .contentShape(Capsule())
+                .buttonStyle(PressScale())
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                .accessibilityLabel("Back to Today")
+                .accessibilityIdentifier("today-button")
+        }
+    }
+}
+
 /// Settings live here, in a native menu that stays open while they change.
 struct MoreMenu: View {
     @Environment(GameModel.self) private var model
@@ -116,75 +171,32 @@ struct MoreMenu: View {
     }
 }
 
-/// The levels, as a floating bar like a system tab bar. While a word is being spelled it draws in to the current
-/// level, so the board has the screen and a stray thumb can't change level.
-struct LevelBar: View {
+/// The levels, in a glass dropdown beside "⋯". The button wears the current level's symbol, and the menu shows each
+/// level's progress. Locked while a word is being spelled, so a stray thumb can't change level.
+struct LevelMenu: View {
     @Environment(GameModel.self) private var model
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    static let height: CGFloat = 52
-    private static let inset: CGFloat = 4
 
     var body: some View {
-        let index = CGFloat(Level.playable.firstIndex(of: model.level) ?? 0)
-        let spelling = model.trayActive
-        GeometryReader { proxy in
-            let full = proxy.size.width
-            let segment = (full - Self.inset * 2) / 3
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Theme.glassStrong)
-                    .shadow(color: RGBA(20, 30, 60, 0.12).color, radius: 5, y: 2)
-                    .frame(width: segment, height: Self.height - Self.inset * 2)
-                    .offset(x: Self.inset + index * segment)
-                    .animation(Theme.settle(0.32), value: index)
-                HStack(spacing: 0) {
-                    ForEach(model.tabs) { tab in
-                        tabButton(tab, spelling: spelling).frame(width: segment)
-                    }
+        Menu {
+            Picker("Difficulty", selection: Binding(get: { model.level }, set: model.select(level:))) {
+                ForEach(model.tabs) { tab in
+                    Label(tab.badge.isEmpty ? tab.level.label : "\(tab.level.label)  \(tab.badge)", systemImage: tab.level.symbol)
+                        .tag(tab.level)
+                        .accessibilityIdentifier("tab-\(tab.level.rawValue)")
                 }
-                .padding(.horizontal, Self.inset)
             }
-            .frame(width: full, height: Self.height, alignment: .leading)
-            .offset(x: spelling ? -index * segment : 0)
-            .frame(width: spelling ? segment + Self.inset * 2 : full, height: Self.height, alignment: .leading)
-            .clipShape(Capsule())
-            .floatingGlass(in: Capsule())
-            .frame(width: full)
-        }
-        .frame(height: Self.height)
-        .padding(.horizontal, 4)
-        .animation(reduceMotion ? nil : Theme.glide(0.35), value: spelling)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Difficulty")
-    }
-
-    private func tabButton(_ tab: TabDisplay, spelling: Bool) -> some View {
-        let active = tab.level == model.level
-        return Button {
-            model.select(level: tab.level)
         } label: {
-            HStack(spacing: 6) {
-                Circle().fill(tab.level.tint).frame(width: 7, height: 7)
-                Text(tab.level.label)
-                if !tab.badge.isEmpty {
-                    Text(tab.badge).font(Theme.body(11)).monospacedDigit().foregroundStyle(Theme.good)
-                }
-            }
-            .font(Theme.body(14))
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .foregroundStyle(active ? Theme.fg : Theme.muted)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .animation(.easeOut(duration: 0.2), value: active)
+            Image(systemName: model.level.symbol)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(model.level.tint)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 44, height: 44)
+                .floatingGlass(in: Circle(), interactive: true)
+                .contentShape(Circle())
         }
-        .buttonStyle(PressScale())
-        .opacity(spelling && !active ? 0 : 1)
-        .allowsHitTesting(!spelling)
-        .accessibilityHidden(spelling && !active)
-        .accessibilityLabel(tab.level.label + (tab.badge == "✓" ? ", done" : tab.badge.isEmpty ? "" : ", \(tab.badge)"))
-        .accessibilityAddTraits(active ? .isSelected : [])
-        .accessibilityIdentifier("tab-\(tab.level.rawValue)")
+        .disabled(model.trayActive)
+        .accessibilityLabel("Difficulty, \(model.level.label)")
+        .accessibilityIdentifier("level-menu")
     }
 }
 

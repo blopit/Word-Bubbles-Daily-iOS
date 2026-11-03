@@ -37,7 +37,7 @@ struct GameScreen: View {
     }
 }
 
-/// The top row, the stage and the floating level bar, which sits low like a system tab bar.
+/// The top row and the stage.
 struct GameColumn: View {
     @Environment(GameModel.self) private var model
     let safeBottom: CGFloat
@@ -53,12 +53,9 @@ struct GameColumn: View {
                 }
             }
             .modifier(SlideIn())
-            if !model.isTutorial {
-                LevelBar()
-            }
         }
         .padding(.top, 4)
-        .padding(.bottom, model.isTutorial ? max(safeBottom, 10) : max(safeBottom - 14, 10))
+        .padding(.bottom, max(safeBottom, 10))
         .ignoresSafeArea(.container, edges: .bottom)
     }
 }
@@ -105,28 +102,6 @@ struct DaySwipe: ViewModifier {
     }
 }
 
-/// The way home from an earlier day.
-struct BackToToday: View {
-    @Environment(GameModel.self) private var model
-
-    var body: some View {
-        if model.showsToday, !model.isTutorial {
-            Button(action: model.goToToday) {
-                HStack(spacing: 3) {
-                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold))
-                    Text("Back to Today")
-                }
-                .font(Theme.body(14))
-                .foregroundStyle(Theme.accent)
-                .frame(minHeight: 30)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PressScale())
-            .accessibilityIdentifier("today-button")
-        }
-    }
-}
-
 /// Stacks the goal, tray and board. The board and tray stay low in the thumb zone, and the goal sits in the middle of
 /// whatever height is left. The board takes what it can up to its honeycomb height.
 struct StageLayout: Layout {
@@ -134,7 +109,7 @@ struct StageLayout: Layout {
     var boardHeight: CGFloat
     var minBoardHeight: CGFloat = 110
     /// Share of the spare height placed above the goal. The rest goes below it.
-    var topShare: CGFloat = 0.5
+    var topShare: CGFloat = 0.12
 
     private func heights(_ subviews: Subviews, width: CGFloat, available: CGFloat) -> (sizes: [CGFloat], spare: CGFloat) {
         var sizes = subviews.map { view -> CGFloat in

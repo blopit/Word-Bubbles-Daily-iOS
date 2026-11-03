@@ -29,6 +29,14 @@ final class WordBubblesUITests: XCTestCase {
         app.descendants(matching: .any)[id].firstMatch
     }
 
+    /// Opens the level menu and picks a level by name. Its item's label also carries the level's progress.
+    private func pickLevel(_ name: String) {
+        any("level-menu").tap()
+        let item = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 3), "the level menu lists \(name)")
+        item.tap()
+    }
+
     private func bubble(_ text: String) -> XCUIElement {
         any("bubble-\(text)")
     }
@@ -123,7 +131,7 @@ final class WordBubblesUITests: XCTestCase {
     func testFinishTutorialByTapping() {
         launch(skipTutorial: false)
         XCTAssertTrue(bubble("RA").waitForExistence(timeout: 10))
-        XCTAssertFalse(any("tab-easy").exists, "tutorial hides the tabs")
+        XCTAssertFalse(any("level-menu").exists, "tutorial hides the level menu")
         XCTAssertFalse(any("days-button").exists, "tutorial hides the calendar")
         XCTAssertFalse(any("hint-button").exists, "tutorial hides the score")
         wait(1)
@@ -138,7 +146,7 @@ final class WordBubblesUITests: XCTestCase {
         wait(0.6)
         shot("tutorial-done")
         any("result-primary").tap()
-        XCTAssertTrue(any("tab-easy").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("level-menu").waitForExistence(timeout: 5))
         XCTAssertTrue(any("hint-button").exists)
     }
 
@@ -146,7 +154,7 @@ final class WordBubblesUITests: XCTestCase {
         launch(skipTutorial: false)
         XCTAssertTrue(any("skip-tutorial").waitForExistence(timeout: 10))
         any("skip-tutorial").tap()
-        XCTAssertTrue(any("tab-easy").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("level-menu").waitForExistence(timeout: 5))
         XCTAssertFalse(any("skip-tutorial").exists)
     }
 
@@ -185,7 +193,7 @@ final class WordBubblesUITests: XCTestCase {
         launch(skipTutorial: true)
         // Two bubbles that are not a word, picked from different words of a board with no bonus between them.
         let puzzle = GameData.shared.puzzle(day: today, level: .hard)
-        any("tab-hard").tap()
+        pickLevel("Hard")
         XCTAssertTrue(bubble(puzzle.chunksByWord[0][0]).waitForExistence(timeout: 10))
         wait(1.4)
         let pool = puzzle.bubbles.map(\.text)
@@ -273,7 +281,7 @@ final class WordBubblesUITests: XCTestCase {
         any("today-button").tap()
         wait(0.5)
 
-        any("tab-medium").tap()
+        pickLevel("Medium")
         let theme = GameData.shared.puzzle(day: today, level: .medium).theme
         XCTAssertTrue(any("theme").waitForExistence(timeout: 3))
         XCTAssertEqual(any("theme").label, theme)
@@ -356,7 +364,7 @@ final class WordBubblesUITests: XCTestCase {
         wait(1.5)
         shot("landscape")
         XCTAssertTrue(any("hint-button").isHittable)
-        XCTAssertTrue(any("tab-hard").isHittable)
+        XCTAssertTrue(any("level-menu").isHittable)
         openHelp()
         wait(0.6)
         shot("landscape-help")

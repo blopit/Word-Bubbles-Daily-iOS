@@ -197,6 +197,16 @@ extension Level {
         case .tutorial: return Theme.muted
         }
     }
+
+    /// A shape per level, so the level reads without its color.
+    var symbol: String {
+        switch self {
+        case .easy: return "leaf.fill"
+        case .medium: return "flame.fill"
+        case .hard: return "mountain.2.fill"
+        case .tutorial: return "graduationcap.fill"
+        }
+    }
 }
 
 extension FlashTone {

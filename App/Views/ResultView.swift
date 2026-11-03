@@ -172,7 +172,6 @@ struct BoardResultContent: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            BackToToday()
             VStack(spacing: 6) {
                 Text(result.tag.uppercased())
                     .font(Theme.text(.caption))

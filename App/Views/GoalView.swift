@@ -8,7 +8,6 @@ struct GoalView: View {
 
     var body: some View {
         VStack(spacing: compact ? 6 : 10) {
-            BackToToday()
             Text(model.theme)
                 .font(Theme.display(compact ? 26 : 34))
                 .kerning(-0.3)
