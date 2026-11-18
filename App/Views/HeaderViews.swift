@@ -43,12 +43,15 @@ struct BarLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         guard subviews.count >= 2 else { return }
-        let leading = subviews[0].sizeThatFits(.unspecified)
         let trailing = subviews[1].sizeThatFits(.unspecified)
+        let center = subviews.count > 2 ? subviews[2].sizeThatFits(.unspecified) : .zero
+        // The leading group gets only the width the others leave it, so it contracts (the day button drops to its
+        // icon) instead of running under the score.
+        let room = bounds.width - trailing.width - spacing - (subviews.count > 2 ? center.width + spacing : 0)
+        let leading = subviews[0].sizeThatFits(ProposedViewSize(width: max(room, 44), height: bounds.height))
         subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(leading))
         subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: ProposedViewSize(trailing))
         guard subviews.count > 2 else { return }
-        let center = subviews[2].sizeThatFits(.unspecified)
         let low = bounds.minX + leading.width + spacing + center.width / 2
         let high = bounds.maxX - trailing.width - spacing - center.width / 2
         let x = low > bounds.midX ? (low + high) / 2 : bounds.midX
@@ -92,26 +95,35 @@ struct DayButton: View {
     var body: some View {
         let spelling = model.trayActive
         Button(action: model.openDays) {
-            HStack(spacing: 6) {
-                Image(systemName: "calendar").font(.system(size: 16, weight: .semibold))
-                if !spelling {
-                    Text(model.dayTitle)
-                        .font(Theme.body(15))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .fixedSize()
-                        .transition(.opacity)
-                }
+            // Falls back to the icon alone when the bar is too tight for the date (an earlier day, with Today beside
+            // it, on a narrow phone).
+            ViewThatFits(in: .horizontal) {
+                label(showsTitle: !spelling)
+                label(showsTitle: false)
             }
-            .padding(.horizontal, spelling ? 0 : 14)
-            .frame(minWidth: 44, minHeight: 44)
-            .floatingGlass(in: Capsule(), interactive: true)
-            .contentShape(Capsule())
         }
         .buttonStyle(PressScale())
         .animation(Theme.glide(0.3), value: spelling)
         .accessibilityLabel("\(model.dayName), \(model.dayLabel). Your days")
         .accessibilityIdentifier("days-button")
+    }
+
+    private func label(showsTitle: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar").font(.system(size: 16, weight: .semibold))
+            if showsTitle {
+                Text(model.dayTitle)
+                    .font(Theme.body(15))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, showsTitle ? 14 : 0)
+        .frame(minWidth: 44, minHeight: 44)
+        .floatingGlass(in: Capsule(), interactive: true)
+        .contentShape(Capsule())
     }
 }
 

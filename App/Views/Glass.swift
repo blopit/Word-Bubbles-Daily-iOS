@@ -29,11 +29,13 @@ extension View {
         }
     }
 
-    /// A bar pinned above scrolling content, which fades under it.
+    /// A bar pinned above scrolling content, which passes under it. The edge is hard, not soft: the bar holds text, and
+    /// a soft edge lets the rows behind it read through the numbers.
     @ViewBuilder
     func pinnedTopBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
         if #available(iOS 26.0, *) {
             safeAreaBar(edge: .top, spacing: 0, content: bar)
+                .scrollEdgeEffectStyle(.hard, for: .top)
         } else {
             safeAreaInset(edge: .top, spacing: 0) { bar().background(.bar) }
         }

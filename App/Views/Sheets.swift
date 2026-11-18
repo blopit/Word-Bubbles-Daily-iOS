@@ -20,8 +20,24 @@ private struct SheetFrame<Content: View, Leading: View>: View {
     let title: String
     let doneID: String
     let close: () -> Void
+    /// The heights the sheet can take, starting at the first.
+    let detents: [PresentationDetent]
     @ViewBuilder let leading: () -> Leading
     @ViewBuilder let content: () -> Content
+    @State private var detent: PresentationDetent
+
+    init(
+        title: String, doneID: String, close: @escaping () -> Void, detents: [PresentationDetent] = [.medium, .large],
+        @ViewBuilder leading: @escaping () -> Leading, @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.doneID = doneID
+        self.close = close
+        self.detents = detents
+        self.leading = leading
+        self.content = content
+        _detent = State(initialValue: detents[0])
+    }
 
     var body: some View {
         NavigationStack {
@@ -35,7 +51,7 @@ private struct SheetFrame<Content: View, Leading: View>: View {
                     }
                 }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(Set(detents), selection: $detent)
         .presentationDragIndicator(.visible)
         .foregroundStyle(Theme.fg)
     }
@@ -132,7 +148,10 @@ struct CalendarSheet: View {
     var body: some View {
         let months = CalendarMonth.months(today: model.store.today, rows: model.dayRows, calendar: .current)
         let weekdays = CalendarMonth.weekdays(calendar: .current)
-        SheetFrame(title: GameText.Days.title, doneID: "card-close", close: model.closeOverlay) {
+        // Opens tall enough for the whole current month, so none of it starts out under the stats.
+        SheetFrame(
+            title: GameText.Days.title, doneID: "card-close", close: model.closeOverlay, detents: [.large, .medium]
+        ) {
             if model.showsToday {
                 Button("Today") { model.openDayFromList(model.store.today) }
                     .accessibilityIdentifier("calendar-today")
@@ -141,7 +160,7 @@ struct CalendarSheet: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     ForEach(months) { month in
-                        MonthGrid(month: month, weekdays: weekdays)
+                        MonthGrid(month: month)
                     }
                     Text(GameText.Days.footnote)
                         .font(Theme.text(.footnote, weight: .regular))
@@ -153,9 +172,20 @@ struct CalendarSheet: View {
             }
             .defaultScrollAnchor(.bottom)
             .pinnedTopBar {
-                DayStats()
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                // The weekday letters are the same for every month, so they stay put with the stats.
+                VStack(spacing: 10) {
+                    DayStats()
+                    LazyVGrid(columns: MonthGrid.columns, spacing: 0) {
+                        ForEach(Array(weekdays.enumerated()), id: \.offset) { _, letter in
+                            Text(letter)
+                                .font(Theme.text(.caption2))
+                                .foregroundStyle(Theme.muted)
+                        }
+                    }
+                    .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
             }
         }
     }
@@ -191,8 +221,7 @@ private struct DayStats: View {
 
 private struct MonthGrid: View {
     let month: CalendarMonth
-    let weekdays: [String]
-    private static let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+    static let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -200,12 +229,6 @@ private struct MonthGrid: View {
                 .font(Theme.text(.headline))
                 .accessibilityAddTraits(.isHeader)
             LazyVGrid(columns: Self.columns, spacing: 6) {
-                ForEach(Array(weekdays.enumerated()), id: \.offset) { _, letter in
-                    Text(letter)
-                        .font(Theme.text(.caption2))
-                        .foregroundStyle(Theme.muted)
-                        .accessibilityHidden(true)
-                }
                 ForEach(0..<month.leadingBlanks, id: \.self) { _ in
                     Color.clear.frame(height: 1).accessibilityHidden(true)
                 }
