@@ -26,7 +26,7 @@ targets:
         PRODUCT_NAME: Word Bubbles
         PRODUCT_MODULE_NAME: WordBubbles
         MARKETING_VERSION: "2.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "2"
         # The 2018 app runs on iPad, and an update can't drop a device family.
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
