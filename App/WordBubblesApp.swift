@@ -5,14 +5,24 @@ import WordBubblesCore
 @main
 struct WordBubblesApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var model: GameModel? = AppBootstrap.makeModel()
+    @State private var plus: PlusStore
+    @State private var model: GameModel?
+
+    init() {
+        let plus = AppBootstrap.makePlus()
+        _plus = State(initialValue: plus)
+        _model = State(initialValue: AppBootstrap.makeModel(hasPlus: plus.isUnlocked))
+    }
 
     var body: some Scene {
         WindowGroup {
             if let model {
                 GameScreen()
                     .environment(model)
+                    .environment(plus)
                     .preferredColorScheme(AppBootstrap.forcedScheme)
+                    .task { if !AppBootstrap.isUITesting { plus.start() } }
+                    .onChange(of: plus.isUnlocked) { _, unlocked in model.setPlus(unlocked) }
                     .onChange(of: scenePhase) { _, phase in
                         switch phase {
                         case .active: model.didBecomeActive()
@@ -29,13 +39,22 @@ struct WordBubblesApp: App {
 @MainActor
 enum AppBootstrap {
     static var isUnitTesting: Bool { ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil }
+    static var isUITesting: Bool { ProcessInfo.processInfo.arguments.contains("-uiTesting") }
+
+    /// UI tests get a throwaway unlock state; `-uiTestingPlus` starts them unlocked.
+    static func makePlus() -> PlusStore {
+        guard isUITesting else { return PlusStore() }
+        let defaults = UserDefaults(suiteName: "wb-ui-plus-\(UUID().uuidString)") ?? .standard
+        defaults.set(ProcessInfo.processInfo.arguments.contains("-uiTestingPlus"), forKey: PlusStore.cacheKey)
+        return PlusStore(defaults: defaults)
+    }
 
     /// UI tests photograph both schemes; everyone else follows the system.
     static var forcedScheme: ColorScheme? {
         ProcessInfo.processInfo.arguments.contains("-uiTestingDark") ? .dark : nil
     }
 
-    static func makeModel() -> GameModel? {
+    static func makeModel(hasPlus: Bool) -> GameModel? {
         let arguments = ProcessInfo.processInfo.arguments
         let uiTesting = arguments.contains("-uiTesting")
         if isUnitTesting && !uiTesting { return nil }
@@ -54,7 +73,8 @@ enum AppBootstrap {
             scheduler: scheduler,
             measure: Theme.measureTile,
             reduceMotion: { UIAccessibility.isReduceMotionEnabled },
-            usesNetwork: !uiTesting
+            usesNetwork: !uiTesting,
+            hasPlus: hasPlus
         ))
     }
 

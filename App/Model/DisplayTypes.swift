@@ -65,7 +65,7 @@ struct CelebrationBubble: Identifiable, Equatable {
 }
 
 enum Overlay: String, Identifiable, Equatable {
-    case help, days
+    case help, days, plus
 
     var id: String { rawValue }
 }

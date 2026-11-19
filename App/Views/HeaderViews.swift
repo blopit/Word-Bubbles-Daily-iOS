@@ -169,6 +169,8 @@ struct MoreMenu: View {
             ))
             .menuActionDismissBehavior(.disabled)
             Divider()
+            Button(model.hasPlus ? "Word Bubbles+ ✓" : "Word Bubbles+", systemImage: "plus.circle", action: model.openPlus)
+                .accessibilityIdentifier("plus-button")
             Button("How to Play", systemImage: "questionmark.circle", action: model.openHelp)
                 .accessibilityIdentifier("help-button")
         } label: {

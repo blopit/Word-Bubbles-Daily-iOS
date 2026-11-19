@@ -41,7 +41,10 @@ targets:
   WordBubblesTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [AppTests]
+    sources:
+      - AppTests
+      - path: WordBubbles.storekit
+        buildPhase: resources
     dependencies:
       - target: WordBubbles
     settings:
@@ -72,6 +75,8 @@ schemes:
         WordBubblesUITests: [test]
     run:
       config: Debug
+      # Local purchases in the simulator; App Store and TestFlight builds use the real product.
+      storeKitConfiguration: WordBubbles.storekit
     test:
       config: Debug
       targets:

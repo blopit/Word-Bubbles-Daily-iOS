@@ -6,6 +6,7 @@ import WordBubblesCore
 struct GameScreen: View {
     static let space = "game"
     @Environment(GameModel.self) private var model
+    @Environment(PlusStore.self) private var plus
 
     var body: some View {
         @Bindable var model = model
@@ -30,9 +31,11 @@ struct GameScreen: View {
                 switch overlay {
                 case .help: HelpSheet()
                 case .days: CalendarSheet()
+                case .plus: PlusSheet()
                 }
             }
             .environment(model)
+            .environment(plus)
         }
     }
 }

@@ -669,3 +669,75 @@ final class GameModelTests: XCTestCase {
         XCTAssertEqual(defaults.object(forKey: GameModel.postsTimesKey) as? Bool, false)
     }
 }
+
+@MainActor
+final class PlusGatingTests: XCTestCase {
+    func makeModel(hasPlus: Bool = false) -> GameModel {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("wb-plus-\(UUID().uuidString)/progress.json")
+        let store = ProgressStore(url: url, today: 300)
+        store.setTutorialDone()
+        return GameModel(GameDependencies(
+            store: store, records: RecordsClient(transport: FailingTransport()), place: .nowhere,
+            sound: RecordingSound(), haptics: RecordingHaptics(), scheduler: VirtualScheduler(),
+            measure: { Double($0.count) * 12 }, reduceMotion: { true },
+            usesNetwork: false, defaults: UserDefaults(suiteName: "wb-plus-\(UUID().uuidString)")!, hasPlus: hasPlus
+        ))
+    }
+
+    func testTheLastWeekIsFree() {
+        let model = makeModel()
+        model.goToDay(300 - GameModel.freeDays + 1)
+        XCTAssertEqual(model.day, 294)
+        XCTAssertNil(model.overlay)
+    }
+
+    func testOlderDaysOpenTheUnlockAndStayPut() {
+        let model = makeModel()
+        model.goToDay(293)
+        XCTAssertEqual(model.day, 300)
+        XCTAssertEqual(model.overlay, .plus)
+        XCTAssertTrue(model.isLocked(day: 293))
+    }
+
+    func testSwipingPastTheFreeWeekAsksToo() {
+        let model = makeModel()
+        model.goToDay(294)
+        model.previousDay()
+        XCTAssertEqual(model.day, 294)
+        XCTAssertEqual(model.overlay, .plus)
+    }
+
+    func testBuyingFromALockedDayOpensIt() {
+        let model = makeModel()
+        model.goToDay(250)
+        model.setPlus(true)
+        XCTAssertNil(model.overlay)
+        XCTAssertEqual(model.day, 250)
+    }
+
+    func testBuyingFromTheMenuStaysOnTheBoard() {
+        let model = makeModel()
+        model.openPlus()
+        model.setPlus(true)
+        XCTAssertEqual(model.overlay, .plus)
+        XCTAssertEqual(model.day, 300)
+    }
+
+    func testPlusOpensEveryDay() {
+        let model = makeModel(hasPlus: true)
+        XCTAssertFalse(model.isLocked(day: 10))
+        model.goToDay(10)
+        XCTAssertEqual(model.day, 10)
+    }
+
+    func testDaysAlreadyStartedStayOpen() {
+        let model = makeModel(hasPlus: true)
+        model.goToDay(250)
+        var progress = LevelProgress()
+        progress.found = [0]
+        model.store.setRecord(progress, day: 250, level: .easy)
+        model.setPlus(false)
+        XCTAssertFalse(model.isLocked(day: 250))
+        XCTAssertTrue(model.isLocked(day: 249))
+    }
+}

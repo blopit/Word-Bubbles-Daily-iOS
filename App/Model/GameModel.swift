@@ -18,6 +18,8 @@ struct GameDependencies {
     var usesNetwork = true
     var calendar: Calendar = .current
     var defaults: UserDefaults = .standard
+    /// Whether Word Bubbles+ is unlocked at launch.
+    var hasPlus = false
 }
 
 /// The screen's state. The session is the truth and is deliberately not observed: the properties below are what the
@@ -35,6 +37,8 @@ final class GameModel {
     static let hintArmSeconds = 3.0
     static let hapticsKey = "wordbubbles-haptics"
     static let postsTimesKey = "wordbubbles-post-times"
+    /// Today and the days before it that are free without Word Bubbles+.
+    static let freeDays = 7
 
     // MARK: Dependencies
 
@@ -138,6 +142,9 @@ final class GameModel {
     var soundOn: Bool
     var hapticsOn: Bool
     var postsTimes: Bool
+    var hasPlus: Bool
+    /// The locked day that opened the Word Bubbles+ sheet, to open once it's bought.
+    @ObservationIgnored var wantedDay: Int?
 
     var isTutorial: Bool { level == .tutorial }
     var flightDuration: Double { reduceMotion() ? 0 : Self.flightSeconds }
@@ -159,6 +166,7 @@ final class GameModel {
         soundOn = dependencies.sound.isOn
         hapticsOn = dependencies.defaults.object(forKey: Self.hapticsKey) as? Bool ?? true
         postsTimes = dependencies.defaults.object(forKey: Self.postsTimesKey) as? Bool ?? true
+        hasPlus = dependencies.hasPlus
 
         let today = dependencies.store.today
         let first = dependencies.store.initialLevel(day: today)
@@ -747,6 +755,11 @@ final class GameModel {
 
     func goToDay(_ target: Int, level explicit: Level? = nil) {
         guard !inputBlocked, target >= 1 else { return }
+        if isLocked(day: target) {
+            wantedDay = target
+            overlay = .plus
+            return
+        }
         let slide: SlideDirection? = target < day ? .right : target > day ? .left : nil
         open(day: target, level: explicit ?? store.level(forDay: target, stayingOn: level), slide: slide)
     }
@@ -772,6 +785,30 @@ final class GameModel {
         case .share:
             break   // ShareLink handles it
         }
+    }
+
+    /// Days older than the free week need Word Bubbles+, unless they were started before.
+    func isLocked(day target: Int) -> Bool {
+        guard !hasPlus, target <= store.today - Self.freeDays else { return false }
+        return !Level.playable.contains { level in
+            let progress = store.record(day: target, level: level)
+            return progress.done || !progress.found.isEmpty || !progress.bonus.isEmpty
+        }
+    }
+
+    func openPlus() {
+        wantedDay = nil
+        overlay = .plus
+    }
+
+    /// Follows the App Store. A purchase made from a locked day goes straight to it.
+    func setPlus(_ unlocked: Bool) {
+        guard unlocked != hasPlus else { return }
+        hasPlus = unlocked
+        guard unlocked, let target = wantedDay, overlay == .plus else { return }
+        wantedDay = nil
+        overlay = nil
+        goToDay(target)
     }
 
     func openHelp() {

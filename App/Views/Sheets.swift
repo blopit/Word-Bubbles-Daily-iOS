@@ -74,7 +74,7 @@ struct HelpSheet: View {
         Row(symbol: "sparkles", title: "Find bonus words", detail: "Any other real word scores too, and one that fits the theme is a secret worth five times more. See them all on the score screen. Find them early: a hidden word uses its bubbles up."),
         Row(symbol: "timer", title: "Race the clock", detail: "A quick finish wins bronze, silver or gold. A hint gives up the medal and any record, so it asks first."),
         Row(symbol: "shuffle", title: "Stuck?", detail: "Shuffle re-deals the bubbles for free."),
-        Row(symbol: "calendar", title: "Three new boards a day", detail: "Easy, Medium and Hard arrive at midnight. Earlier days stay open from the calendar."),
+        Row(symbol: "calendar", title: "Three new boards a day", detail: "Easy, Medium and Hard arrive at midnight. The last week stays open from the calendar, and Word Bubbles+ opens the whole past year."),
     ]
 
     var body: some View {
@@ -248,6 +248,7 @@ private struct DayCell: View {
     var body: some View {
         let isToday = cell.day == model.store.today
         let isViewed = cell.day == model.day
+        let locked = cell.isPlayable && model.isLocked(day: cell.day)
         Button {
             model.openDayFromList(cell.day)
         } label: {
@@ -259,6 +260,12 @@ private struct DayCell: View {
                     .monospacedDigit()
                     .foregroundStyle(isToday ? Theme.accent : Theme.fg)
                     .minimumScaleFactor(0.7)
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Theme.muted)
+                        .offset(y: 13)
+                }
             }
             .frame(width: Self.size, height: Self.size)
             .frame(maxWidth: .infinity)
@@ -266,8 +273,10 @@ private struct DayCell: View {
         }
         .buttonStyle(PressScale(amount: 0.9))
         .disabled(!cell.isPlayable)
-        .opacity(cell.isPlayable ? 1 : 0.3)
-        .accessibilityLabel("\(model.formatter.full(day: cell.day)), \(cell.done.count) of 3 boards done")
+        .opacity(!cell.isPlayable ? 0.3 : locked ? 0.6 : 1)
+        .accessibilityLabel(locked
+            ? "\(model.formatter.full(day: cell.day)), needs Word Bubbles+"
+            : "\(model.formatter.full(day: cell.day)), \(cell.done.count) of 3 boards done")
         .accessibilityIdentifier("day-row-\(cell.day)")
     }
 }
@@ -300,6 +309,109 @@ struct CountdownText: View {
                 .monospacedDigit()
                 .foregroundStyle(Theme.muted)
                 .accessibilityIdentifier("countdown")
+        }
+    }
+}
+
+/// Word Bubbles+: what it opens, the one price, and a way to restore it.
+struct PlusSheet: View {
+    @Environment(GameModel.self) private var model
+    @Environment(PlusStore.self) private var plus
+
+    private static let rows = [
+        (symbol: "calendar", title: "Every day of the past year", detail: "Open any board in the calendar, not just this week's."),
+        (symbol: "arrow.uturn.backward", title: "Catch up anytime", detail: "Missed a few days? Play every Easy, Medium and Hard you skipped."),
+        (symbol: "heart", title: "Keep Word Bubbles going", detail: "It's made by one person, with no ads and no tracking."),
+    ]
+
+    var body: some View {
+        SheetFrame(title: "", doneID: "plus-close", close: model.closeOverlay) {
+            EmptyView()
+        } content: {
+            ScrollView {
+                VStack(spacing: 22) {
+                    VStack(spacing: 8) {
+                        GlossyCircle(diameter: 54).accessibilityHidden(true)
+                        Text("Word Bubbles+")
+                            .font(Theme.display(26))
+                            .accessibilityAddTraits(.isHeader)
+                        Text(model.wantedDay == nil ? "Today and the last week are free." : "This day is more than a week old.")
+                            .font(Theme.text(.subheadline, weight: .regular))
+                            .foregroundStyle(Theme.muted)
+                    }
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(Self.rows, id: \.title) { row in
+                            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                                Image(systemName: row.symbol)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(Theme.accent)
+                                    .frame(width: 26)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.title).font(Theme.text(.headline))
+                                    Text(row.detail)
+                                        .font(Theme.text(.subheadline, weight: .regular))
+                                        .foregroundStyle(Theme.muted)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    actions
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if plus.isUnlocked {
+            Label("Every day is open. Thank you!", systemImage: "checkmark.seal.fill")
+                .font(Theme.text(.headline))
+                .foregroundStyle(Theme.accent)
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("plus-owned")
+        } else {
+            VStack(spacing: 10) {
+                Button {
+                    Task { await plus.purchase() }
+                } label: {
+                    GlassActionLabel(title: plus.price.map { "Unlock for \($0)" } ?? "Unlock", systemImage: "lock.open", prominent: true)
+                }
+                .buttonStyle(PressScale(amount: 0.96))
+                .disabled(plus.status == .working)
+                .accessibilityIdentifier("plus-buy")
+                Text("One-time purchase. No subscription.")
+                    .font(Theme.text(.footnote, weight: .regular))
+                    .foregroundStyle(Theme.muted)
+                if let message {
+                    Text(message)
+                        .font(Theme.text(.footnote))
+                        .foregroundStyle(Theme.muted)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("plus-status")
+                }
+                Button("Restore Purchase") {
+                    Task { await plus.restore() }
+                }
+                .font(Theme.text(.subheadline))
+                .foregroundStyle(Theme.accent)
+                .frame(minHeight: 44)
+                .disabled(plus.status == .working)
+                .accessibilityIdentifier("plus-restore")
+            }
+        }
+    }
+
+    private var message: String? {
+        switch plus.status {
+        case .idle: return nil
+        case .working: return "Talking to the App Store…"
+        case .pending: return "Waiting for approval. Every day opens as soon as it's approved."
+        case let .failed(text): return text
         }
     }
 }
